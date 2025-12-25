@@ -42,15 +42,44 @@ func main(){
         logrus.Infof("Warning: Failed to enable foreign keys: %v", err)
     }
 
-    // Создаем репозиторий с GORM
     userRepo, err := repository.NewGormUserRepository(db)
     if err != nil {
-        logrus.Fatal("Failed to create repository:", err)
+        logrus.WithError(err).Fatal("Failed to create user repository")
     }
+    
+    // Создаем репозиторий графиков работы
+    workScheduleRepo, err := repository.NewGormWorkScheduleRepository(db)
+    if err != nil {
+        logrus.WithError(err).Fatal("Failed to create work schedule repository")
+    }
+    
+        // Создаем репозиторий статистики пользователей
+    userMonthlyStatRepo, err := repository.NewGormUserMonthlyStatRepository(db)
+    if err != nil {
+        logrus.WithError(err).Fatal("Failed to create user monthly stat repository")
+    }
+    
+    workSessionRepo, err := repository.NewGormWorkSessionRepository(db)
+    if err != nil {
+        logrus.WithError(err).Fatal("Failed to create work session repository")
+    }
+    
+    // Создаем сервис статистики пользователей
+    userMonthlyStatService := service.NewUserMonthlyStatService(userMonthlyStatRepo, userRepo)
+    
+    // Создаем сервис пользователей с зависимостями
+    userService := service.NewUserService(userRepo, workScheduleRepo, userMonthlyStatService)
 
-    // Создаем сервис
-    userService := service.NewUserService(userRepo)
+    // Создаем сервис графиков работы с зависимостью от сервиса статистики
+    workScheduleService := service.NewWorkScheduleService(workScheduleRepo, userMonthlyStatService)
 
+    // Создаем сервис рабочих сессий
+    workSessionService := service.NewWorkSessionService(
+        workSessionRepo,
+        userMonthlyStatRepo,
+        workScheduleRepo,
+    )
+    
     // Инициализируем администратора из конфига
     if err := userService.InitializeAdmin(cfg.BaseAdminChatID); err != nil {
         logrus.Infof("Warning: Failed to initialize admin: %v", err)
@@ -67,8 +96,15 @@ func main(){
     logrus.Infof("Authorized on account %s", client.Bot.Self.UserName)
 
     // Создаем обработчик с конфигом
-    botHandler := handler.NewHandler(client, userService, cfg)
-
+    botHandler := handler.NewHandler(
+        client, 
+        userService, 
+        workScheduleService, 
+        userMonthlyStatService,
+        workSessionService, // НОВОЕ
+        cfg,
+    )
+    
     // Настраиваем канал обновлений
     updates := client.Bot.GetUpdatesChan(client.UpdateConfig)
 

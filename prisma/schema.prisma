@@ -5,18 +5,78 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = "file:./work_schedule.db"
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  chatId    BigInt   @unique @map("chat_id")
-  username  String?
-  firstName String   @map("first_name")
-  lastName  String?  @map("last_name")
-  role      String   @default("client")
-
+  id                 Int                @id @default(autoincrement())
+  chatId             BigInt             @unique @map("chat_id")
+  username           String?
+  firstName          String             @map("first_name")
+  lastName           String?            @map("last_name")
+  role               String             @default("client")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+  
+  // Relations
+  monthlyStats       UserMonthlyStat[]
+  workSessions       WorkSession[]
+  
   @@map("users")
+}
+
+model WorkSchedule {
+  id                  Int       @id @default(autoincrement())
+  year                Int
+  month               Int       // 1-12
+  workDays            Int       @default(0) @map("work_days")
+  workMinutesPerDay   Int       @default(480) @map("work_minutes_per_day")  // 8 часов
+  totalMinutes        Int       @map("total_minutes")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  
+  @@unique([year, month])
+  @@map("work_schedules")
+}
+
+model UserMonthlyStat {
+  id                    Int       @id @default(autoincrement())
+  userId                Int       @map("user_id")
+  year                  Int
+  month                 Int       // 1-12
+  plannedDays           Int       @default(0) @map("planned_days")
+  plannedMinutes        Int       @default(0) @map("planned_minutes")
+  workedDays            Int       @default(0) @map("worked_days")
+  workedMinutes         Int       @default(0) @map("worked_minutes")
+  overtimeMinutes       Int       @default(0) @map("overtime_minutes")
+  deficitMinutes        Int       @default(0) @map("deficit_minutes")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, year, month])
+  @@map("user_monthly_stats")
+}
+
+model WorkSession {
+  id                  Int       @id @default(autoincrement())
+  userId              Int       @map("user_id")
+  date                DateTime  // дата работы
+  clockInTime         DateTime  @map("clock_in_time")
+  clockOutTime        DateTime? @map("clock_out_time")
+  requiredMinutes     Int       @default(480) @map("required_minutes")
+  workedMinutes       Int       @default(0) @map("worked_minutes")
+  diffMinutes         Int       @default(0) @map("diff_minutes")
+  status              String    @default("active")
+  notes               String?
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, date])
+  @@map("work_sessions")
 }

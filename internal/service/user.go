@@ -5,20 +5,48 @@ import (
 	"strings"
 	"work-schedule-bot/internal/models"
 	"work-schedule-bot/internal/repository"
+
+	"github.com/sirupsen/logrus"
 )
 
 type UserService struct {
-    repo *repository.GormUserRepository
+    repo                   repository.GormUserRepository
+    workScheduleRepo       repository.WorkScheduleRepository      // НОВОЕ
+    userMonthlyStatService *UserMonthlyStatService               // НОВОЕ
+    logger                 *logrus.Logger
 }
 
-func NewUserService(repo *repository.GormUserRepository) *UserService {
-    return &UserService{repo: repo}
+func NewUserService(
+    repo repository.GormUserRepository,
+    workScheduleRepo repository.WorkScheduleRepository,           // НОВОЕ
+    userMonthlyStatService *UserMonthlyStatService,              // НОВОЕ
+) *UserService {
+    logger := logrus.New()
+    logger.SetFormatter(&logrus.TextFormatter{
+        FullTimestamp:   true,
+        TimestampFormat: "2006-01-02 15:04:05",
+    })
+    
+    return &UserService{
+        repo:                   repo,
+        workScheduleRepo:       workScheduleRepo,                 // НОВОЕ
+        userMonthlyStatService: userMonthlyStatService,          // НОВОЕ
+        logger:                 logger,
+    }
 }
 
 // CreateUser создает нового пользователя с ролью client по умолчанию
 func (s *UserService) CreateUser(chatID int64, username, firstName, lastName string) (*models.User, error) {
+    s.logger.WithFields(logrus.Fields{
+        "chat_id":    chatID,
+        "username":   username,
+        "first_name": firstName,
+        "last_name":  lastName,
+    }).Info("Creating new user")
+
     // Проверяем валидность данных
     if firstName == "" {
+        s.logger.WithField("chat_id", chatID).Error("First name is empty")
         return nil, fmt.Errorf("имя не может быть пустым")
     }
 
@@ -28,15 +56,65 @@ func (s *UserService) CreateUser(chatID int64, username, firstName, lastName str
         Username:  username,
         FirstName: firstName,
         LastName:  lastName,
-        Role:      models.RoleClient, // По умолчанию client
+        Role:      "client",
     }
 
     err := s.repo.Create(user)
     if err != nil {
+        s.logger.WithError(err).Error("Failed to create user in repository")
         return nil, fmt.Errorf("ошибка создания пользователя: %v", err)
     }
 
+    s.logger.WithField("chat_id", chatID).Info("User created successfully")
+
+    // Создаем статистику для нового пользователя для всех существующих графиков
+    go func() {
+        if err := s.createMonthlyStatsForNewUser(user.ID); err != nil {
+            s.logger.WithError(err).Error("Failed to create monthly stats for new user")
+        }
+    }()
+    
     return user, nil
+}
+
+func (s *UserService) createMonthlyStatsForNewUser(userID uint) error {
+    s.logger.WithField("user_id", userID).Info("Creating monthly stats for new user")
+
+    // Получаем все существующие графики
+    schedules, err := s.workScheduleRepo.GetAll()
+    if err != nil {
+        s.logger.WithError(err).Error("Failed to get work schedules for new user")
+        return err
+    }
+
+    // Создаем статистику для каждого графика
+    for _, schedule := range schedules {
+        stat := &models.UserMonthlyStat{
+            UserID:         userID,
+            Year:           schedule.Year,
+            Month:          schedule.Month,
+            PlannedDays:    schedule.WorkDays,
+            PlannedMinutes: schedule.TotalMinutes,
+        }
+        stat.CalculateStats()
+
+        // Используем репозиторий статистики через сервис
+        _, err := s.userMonthlyStatService.GetUserStatByMonth(userID, schedule.Year, schedule.Month)
+        if err != nil {
+            // Если статистики нет, создаем ее
+            if err := s.userMonthlyStatService.UpdateWorkedTime(userID, schedule.Year, schedule.Month, 0, 0); err != nil {
+                s.logger.WithError(err).Error("Failed to create monthly stat for new user")
+                return err
+            }
+        }
+    }
+
+    s.logger.WithFields(logrus.Fields{
+        "user_id":   userID,
+        "schedules": len(schedules),
+    }).Info("Monthly stats created for new user")
+    
+    return nil
 }
 
 // GetUser возвращает пользователя по chatID

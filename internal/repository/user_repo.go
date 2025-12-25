@@ -11,14 +11,14 @@ type GormUserRepository struct {
     db *gorm.DB
 }
 
-func NewGormUserRepository(db *gorm.DB) (*GormUserRepository, error) {
+func NewGormUserRepository(db *gorm.DB) (GormUserRepository, error) {
     // Автомиграция - создает таблицы если их нет
     err := db.AutoMigrate(&models.User{})
     if err != nil {
-        return nil, err
+        return GormUserRepository{}, err
     }
 
-    return &GormUserRepository{db: db}, nil
+    return GormUserRepository{db: db}, nil
 }
 
 func (r *GormUserRepository) Create(user *models.User) error {
