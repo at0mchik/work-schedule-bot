@@ -57,16 +57,16 @@ func (s *WorkSessionService) ClockIn(userID uint, clockInTime time.Time, require
     }
 
     // Проверяем, есть ли сессия на сегодня
-    hasToday, err := s.sessionRepo.UserHasSessionToday(userID)
-    if err != nil {
-        s.logger.WithError(err).Error("Failed to check today's session")
-        return nil, err
-    }
+    // hasToday, err := s.sessionRepo.UserHasSessionToday(userID)
+    // if err != nil {
+    //     s.logger.WithError(err).Error("Failed to check today's session")
+    //     return nil, err
+    // }
     
-    if hasToday {
-        s.logger.WithField("user_id", userID).Warn("User already has session today")
-        return nil, fmt.Errorf("сегодня вы уже отмечались")
-    }
+    // if hasToday {
+    //     s.logger.WithField("user_id", userID).Warn("User already has session today")
+    //     return nil, fmt.Errorf("сегодня вы уже отмечались")
+    // }
 
     // Создаем новую сессию
     session := &models.WorkSession{
@@ -362,14 +362,14 @@ func (s *WorkSessionService) CanClockIn(userID uint) (bool, string, error) {
     }
 
     // Проверяем сессию на сегодня
-    hasToday, err := s.sessionRepo.UserHasSessionToday(userID)
-    if err != nil {
-        return false, "", err
-    }
+    // hasToday, err := s.sessionRepo.UserHasSessionToday(userID)
+    // if err != nil {
+    //     return false, "", err
+    // }
     
-    if hasToday {
-        return false, "сегодня вы уже отмечались", nil
-    }
+    // if hasToday {
+    //     return false, "сегодня вы уже отмечались", nil
+    // }
 
     return true, "", nil
 }

@@ -1,12 +1,12 @@
 package repository
 
 import (
-    "errors"
-    "time"
-    "work-schedule-bot/internal/models"
+	"errors"
+	"time"
+	"work-schedule-bot/internal/models"
 
-    "github.com/sirupsen/logrus"
-    "gorm.io/gorm"
+	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 type WorkSessionRepository interface {
@@ -85,6 +85,9 @@ func (r *GormWorkSessionRepository) Create(session *models.WorkSession) error {
     // Вычисляем поля
     session.UpdateCalculatedFields()
 
+    tempDate := time.Date(session.Date.Year(), session.Date.Month(), session.Date.Day(), 0, 0, 0, 0, session.Date.Location())
+    session.Date = tempDate
+    
     result := r.db.Create(session)
     if result.Error != nil {
         r.logger.WithError(result.Error).Error("Failed to create work session")
@@ -219,7 +222,27 @@ func (r *GormWorkSessionRepository) GetByUserAndDate(userID uint, date time.Time
 }
 
 func (r *GormWorkSessionRepository) GetTodayByUserID(userID uint) (*models.WorkSession, error) {
-    return r.GetByUserAndDate(userID, time.Now())
+	year, month, day := time.Now().Date()
+	startDate := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+	endDate := startDate.Add(24 * time.Hour)
+	
+	var session models.WorkSession
+	result := r.db.Where("user_id = ? AND date BETWEEN ? AND ?", userID, startDate, endDate).First(&session)
+	
+ if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+        r.logger.WithFields(logrus.Fields{
+            "user_id": userID,
+            "date":    time.Now().Format("2006-01-02"),
+        }).Debug("Work session not found for user/date")
+        return nil, nil
+    }
+    
+    if result.Error != nil {
+        r.logger.WithError(result.Error).Error("Failed to get work session by user and date")
+        return nil, result.Error
+    }
+
+    return &session, nil
 }
 
 func (r *GormWorkSessionRepository) GetByUserID(userID uint, limit int) ([]*models.WorkSession, error) {
