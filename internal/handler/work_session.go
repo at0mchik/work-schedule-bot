@@ -2,19 +2,137 @@ package handler
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"work-schedule-bot/internal/models"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/sirupsen/logrus"
-	"work-schedule-bot/internal/models"
 )
 
-// clockIn отмечает начало рабочего дня
+// parseDateTime парсит строку с датой и временем
+// Поддерживает форматы:
+// Дата: dd.mm.yyyy, dd-mm-yyyy
+// Время: hh:mm, hh.mm, hh-mm
+func parseDateTime(dateStr, timeStr string, location *time.Location) (time.Time, error) {
+	var date time.Time
+	var err error
+
+	// Если дата не указана, используем сегодня
+	if dateStr == "" {
+		date = time.Now().In(location)
+	} else {
+		// Нормализуем разделители даты
+		dateStr = strings.Replace(dateStr, "-", ".", -1)
+
+		// Парсим дату
+		date, err = time.ParseInLocation("02.01.2006", dateStr, location)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("неверный формат даты. Используйте dd.mm.yyyy или dd-mm-yyyy")
+		}
+	}
+
+	// Если время не указано, используем текущее
+	if timeStr == "" {
+		return date, nil
+	}
+
+	// Нормализуем разделители времени
+	timeStr = strings.ReplaceAll(timeStr, ".", ":")
+	timeStr = strings.ReplaceAll(timeStr, "-", ":")
+
+	// Добавляем секунды, если их нет
+	if !strings.Contains(timeStr, ":") {
+		timeStr += ":00"
+	} else {
+		parts := strings.Split(timeStr, ":")
+		if len(parts) == 2 {
+			timeStr += ":00"
+		}
+	}
+
+	// Парсим время
+	parsedTime, err := time.ParseInLocation("15:04:05", timeStr, location)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("неверный формат времени. Используйте hh:mm, hh.mm или hh-mm")
+	}
+
+	// Объединяем дату и время
+	result := time.Date(
+		date.Year(),
+		date.Month(),
+		date.Day(),
+		parsedTime.Hour(),
+		parsedTime.Minute(),
+		parsedTime.Second(),
+		0,
+		location,
+	)
+
+	return result, nil
+}
+
+// parseCommandArgs парсит аргументы команды
+func parseCommandArgs(text string) (dateStr, timeStr string) {
+	// Убираем команду из текста
+	args := strings.TrimSpace(strings.TrimPrefix(text, "/in"))
+	args = strings.TrimSpace(strings.TrimPrefix(args, "/out"))
+
+	if args == "" {
+		return "", ""
+	}
+
+	// Разделяем аргументы
+	parts := strings.Fields(args)
+
+	// Регулярные выражения для определения формата
+	dateRegex := regexp.MustCompile(`^\d{2}[\.-]\d{2}[\.-]\d{4}$`)
+	timeRegex := regexp.MustCompile(`^\d{1,2}[\.:\-]\d{2}$`)
+
+	for _, part := range parts {
+		if dateRegex.MatchString(part) && dateStr == "" {
+			dateStr = part
+		} else if timeRegex.MatchString(part) && timeStr == "" {
+			timeStr = part
+		}
+	}
+
+	return dateStr, timeStr
+}
+
 func (h *Handler) clockIn(message *tgbotapi.Message) {
 	chatID := message.Chat.ID
-	now := time.Now()
+
+	// Парсим аргументы команды
+	dateStr, timeStr := parseCommandArgs(message.Text)
+
+	var targetTime time.Time
+	var err error
+
+	// Если указаны дата/время, парсим их
+	if dateStr != "" || timeStr != "" {
+		// Определяем часовой пояс (можно получить из профиля пользователя или использовать системный)
+		location := time.Local // или time.UTC
+
+		targetTime, err = parseDateTime(dateStr, timeStr, location)
+		if err != nil {
+			msg := tgbotapi.NewMessage(chatID, "❌ "+err.Error()+"\n\nПримеры:\n/in 25.12.2023 09:30\n/in 09.00\n/in 25-12-2023 09-30")
+			h.client.Bot.Send(msg)
+			return
+		}
+
+		// Проверяем, что время не в будущем (для начала работы)
+		if targetTime.After(time.Now()) {
+			msg := tgbotapi.NewMessage(chatID, "❌ Нельзя указать время начала работы в будущем")
+			h.client.Bot.Send(msg)
+			return
+		}
+	} else {
+		// Используем текущее время
+		targetTime = time.Now()
+	}
 
 	// Получаем пользователя
 	user, err := h.userService.GetUser(chatID)
@@ -40,16 +158,15 @@ func (h *Handler) clockIn(message *tgbotapi.Message) {
 		return
 	}
 
-	// Получаем необходимое время работы на сегодня
-
-	requiredMinutes, err := h.userMonthlyStatService.GetRequiredMinutesByUserID(user.ID, time.Now().Year(), int(time.Now().Month()))
+	// Получаем необходимое время работы на день
+	requiredMinutes, err := h.userMonthlyStatService.GetRequiredMinutesByUserID(user.ID, targetTime.Year(), int(targetTime.Month()))
 	if err != nil {
 		logrus.WithError(err).Warn("Failed to get required minutes, using default")
 		requiredMinutes = 200 // 8 часов 40 минут по умолчанию
 	}
 
 	// Начинаем работу
-	_, err = h.workSessionService.ClockIn(user.ID, now, requiredMinutes)
+	_, err = h.workSessionService.ClockIn(user.ID, targetTime, requiredMinutes)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to clock in")
 		msg := tgbotapi.NewMessage(chatID, "❌ Ошибка начала работы: "+err.Error())
@@ -58,7 +175,7 @@ func (h *Handler) clockIn(message *tgbotapi.Message) {
 	}
 
 	// Форматируем время
-	inTime := now.Format("15:04")
+	inTime := targetTime.Format("15:04")
 	requiredHours := requiredMinutes / 60
 	requiredMins := requiredMinutes % 60
 
@@ -71,40 +188,69 @@ func (h *Handler) clockIn(message *tgbotapi.Message) {
 
 	response := fmt.Sprintf(
 		`✅ Рабочий день начат!
-
+		
 ⏰ Время начала: %s
 📅 Дата: %s
-⏳ Норма на сегодня: %s
+⏳ Норма на день: %s
 
 💡 Не забудьте отметить конец рабочего дня командой /out`,
 		inTime,
-		now.Format("02.01.2006"),
+		targetTime.Format("02.01.2006"),
 		requiredTime,
 	)
 
-	msg := tgbotapi.NewMessage(chatID, response)
-	msg.ParseMode = "Markdown" // Включаем Markdown форматирование
+	// Если указано время в прошлом, добавляем предупреждение
+	if targetTime.Before(time.Now().Add(-5 * time.Minute)) {
+		response += "\n\n⚠️ *Внимание:* Работа начата задним числом."
+	}
 
-	// Создаем клавиатуру с одной кнопкой
+	msg := tgbotapi.NewMessage(chatID, response)
+	msg.ParseMode = "Markdown"
+
+	// Создаем клавиатуру с кнопкой завершения
 	inlineKeyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(
-				"⏰ Завершить рабочий день", // Текст на кнопке
-				"command_clock_out", // Callback data
+				"⏰ Завершить рабочий день",
+				"command_clock_out",
 			),
 		),
 	)
 
-	// Настройки клавиатуры
 	msg.ReplyMarkup = inlineKeyboard
-
 	h.client.Bot.Send(msg)
 }
 
-// clockOut отмечает конец рабочего дня
 func (h *Handler) clockOut(message *tgbotapi.Message) {
 	chatID := message.Chat.ID
-	now := time.Now()
+
+	// Парсим аргументы команды
+	dateStr, timeStr := parseCommandArgs(message.Text)
+
+	var targetTime time.Time
+	var err error
+
+	// Если указаны дата/время, парсим их
+	if dateStr != "" || timeStr != "" {
+		location := time.Local // или time.UTC
+
+		targetTime, err = parseDateTime(dateStr, timeStr, location)
+		if err != nil {
+			msg := tgbotapi.NewMessage(chatID, "❌ "+err.Error()+"\n\nПримеры:\n/out 25.12.2023 18:30\n/out 18.00\n/out 25-12-2023 18-30")
+			h.client.Bot.Send(msg)
+			return
+		}
+
+		// Проверяем, что время не в будущем
+		if targetTime.After(time.Now()) {
+			msg := tgbotapi.NewMessage(chatID, "❌ Нельзя указать время завершения в будущем")
+			h.client.Bot.Send(msg)
+			return
+		}
+	} else {
+		// Используем текущее время
+		targetTime = time.Now()
+	}
 
 	// Получаем пользователя
 	user, err := h.userService.GetUser(chatID)
@@ -145,8 +291,15 @@ func (h *Handler) clockOut(message *tgbotapi.Message) {
 		return
 	}
 
+	// Проверяем, что время завершения позже времени начала
+	if targetTime.Before(activeSession.ClockInTime) {
+		msg := tgbotapi.NewMessage(chatID, "❌ Время завершения не может быть раньше времени начала работы")
+		h.client.Bot.Send(msg)
+		return
+	}
+
 	// Завершаем работу
-	session, err := h.workSessionService.ClockOut(user.ID, now)
+	session, err := h.workSessionService.ClockOut(user.ID, targetTime)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to clock out")
 		msg := tgbotapi.NewMessage(chatID, "❌ Ошибка завершения работы: "+err.Error())
@@ -156,7 +309,7 @@ func (h *Handler) clockOut(message *tgbotapi.Message) {
 
 	// Форматируем результат
 	inTime := activeSession.ClockInTime.Format("15:04")
-	outTime := now.Format("15:04")
+	outTime := targetTime.Format("15:04")
 
 	workedHours := session.WorkedMinutes / 60
 	workedMins := session.WorkedMinutes % 60
@@ -197,7 +350,7 @@ func (h *Handler) clockOut(message *tgbotapi.Message) {
 
 	response := fmt.Sprintf(
 		`✅ Рабочий день завершен!
-
+		
 ⏰ Время работы: %s - %s
 ⏳ Отработано: %s
 📊 Норма: %s%s
@@ -209,6 +362,11 @@ func (h *Handler) clockOut(message *tgbotapi.Message) {
 		diffStatus,
 	)
 
+	// Если указано время в прошлом, добавляем предупреждение
+	if targetTime.Before(time.Now().Add(-5 * time.Minute)) {
+		response += "\n\n⚠️ *Внимание:* Работа завершена задним числом."
+	}
+
 	msg := tgbotapi.NewMessage(chatID, response)
 	msg.ParseMode = "Markdown"
 
@@ -216,14 +374,13 @@ func (h *Handler) clockOut(message *tgbotapi.Message) {
 	inlineKeyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(
-				"🔄 Начать новый рабочий день", // Текст на кнопке
-				"command_clock_in", // Callback data для обработки
+				"🔄 Начать новый рабочий день",
+				"command_clock_in",
 			),
 		),
 	)
 
 	msg.ReplyMarkup = inlineKeyboard
-	// Отправляем сообщение
 	h.client.Bot.Send(msg)
 }
 
