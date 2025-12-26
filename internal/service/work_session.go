@@ -151,7 +151,7 @@ func (s *WorkSessionService) updateMonthlyStats(userID uint, session *models.Wor
     }
 
     // Обновляем месячную статистику
-    err = s.userMonthlyStatRepo.UpdateWorkedStats(userID, year, month, days + 1, minutes + session.WorkedMinutes)
+    err = s.userMonthlyStatRepo.UpdateWorkedStats(userID, year, month, days, minutes)
     if err != nil {
         return err
     }
