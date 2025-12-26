@@ -88,6 +88,8 @@ func (h *Handler) handleProfileState(message *tgbotapi.Message, state string) {
 
 		msg := tgbotapi.NewMessage(chatID, responseText)
 		h.client.Bot.Send(msg)
+		schedules, _ := h.workScheduleService.GetAllSchedules()
+		h.userMonthlyStatService.CreateStatsForNewUser(user.ID, schedules)
 	} else if state == "awaiting_update" {
 		// Обработка обновления профиля
 		delete(h.userStates, chatID)
