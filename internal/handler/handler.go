@@ -11,32 +11,32 @@ import (
 )
 
 type Handler struct {
-    client                  *telegram.Client
-    userService             *service.UserService
-    workScheduleService     *service.WorkScheduleService
-    userMonthlyStatService  *service.UserMonthlyStatService
-    workSessionService      *service.WorkSessionService // НОВОЕ
-    userStates              map[int64]string
-    config                  *config.BotConfig
+	client                 *telegram.Client
+	userService            *service.UserService
+	workScheduleService    *service.WorkScheduleService
+	userMonthlyStatService *service.UserMonthlyStatService
+	workSessionService     *service.WorkSessionService // НОВОЕ
+	userStates             map[int64]string
+	config                 *config.BotConfig
 }
 
 func NewHandler(
-    client *telegram.Client,
-    userService *service.UserService,
-    workScheduleService *service.WorkScheduleService,
-    userMonthlyStatService *service.UserMonthlyStatService,
-    workSessionService *service.WorkSessionService, // НОВОЕ
-    cfg *config.BotConfig,
+	client *telegram.Client,
+	userService *service.UserService,
+	workScheduleService *service.WorkScheduleService,
+	userMonthlyStatService *service.UserMonthlyStatService,
+	workSessionService *service.WorkSessionService, // НОВОЕ
+	cfg *config.BotConfig,
 ) *Handler {
-    return &Handler{
-        client:                  client,
-        userService:             userService,
-        workScheduleService:     workScheduleService,
-        userMonthlyStatService:  userMonthlyStatService,
-        workSessionService:      workSessionService, // НОВОЕ
-        userStates:              make(map[int64]string),
-        config:                  cfg,
-    }
+	return &Handler{
+		client:                 client,
+		userService:            userService,
+		workScheduleService:    workScheduleService,
+		userMonthlyStatService: userMonthlyStatService,
+		workSessionService:     workSessionService, // НОВОЕ
+		userStates:             make(map[int64]string),
+		config:                 cfg,
+	}
 }
 
 func (h *Handler) HandleUpdates(updates tgbotapi.UpdatesChannel) {
@@ -57,39 +57,72 @@ func (h *Handler) HandleUpdates(updates tgbotapi.UpdatesChannel) {
 
 // handleCallbackQuery обрабатывает inline кнопки
 func (h *Handler) handleCallbackQuery(callback *tgbotapi.CallbackQuery) {
-    chatID := callback.Message.Chat.ID
-    data := callback.Data
+	chatID := callback.Message.Chat.ID
+	data := callback.Data
 
-    // Удаляем клавиатуру
-    editMsg := tgbotapi.NewEditMessageReplyMarkup(chatID, callback.Message.MessageID, tgbotapi.NewInlineKeyboardMarkup())
-    h.client.Bot.Send(editMsg)
+	// Удаляем клавиатуру
+	editMsg := tgbotapi.NewEditMessageReplyMarkup(chatID, callback.Message.MessageID, tgbotapi.NewInlineKeyboardMarkup())
+	h.client.Bot.Send(editMsg)
 
-    // Обработка callback для графиков
-    if strings.HasPrefix(data, "confirm_delete_schedule_") || data == "cancel_delete_schedule" {
-        h.handleScheduleCallback(callback)
-        return
-    }
+	// Обработка callback для графиков
+	if strings.HasPrefix(data, "confirm_delete_schedule_") || data == "cancel_delete_schedule" {
+		h.handleScheduleCallback(callback)
+		return
+	}
 
-    // Существующая обработка для профилей
-    switch data {
-    case "confirm_delete":
-        err := h.userService.DeleteUser(chatID)
-        if err != nil {
-            msg := tgbotapi.NewMessage(chatID, "❌ Ошибка удаления профиля: "+err.Error())
-            h.client.Bot.Send(msg)
-        } else {
-            msg := tgbotapi.NewMessage(chatID, "✅ Ваш профиль успешно удален!")
-            h.client.Bot.Send(msg)
-        }
+	if data == "command_clock_out" {
+		// Создаем фейковое сообщение с командой /out
+		fakeMessage := &tgbotapi.Message{
+			MessageID: callback.Message.MessageID,
+			Chat: &tgbotapi.Chat{
+				ID: chatID,
+			},
+			From: callback.From,
+			Text: "/out",
+		}
 
-    case "cancel_delete":
-        msg := tgbotapi.NewMessage(chatID, "❌ Удаление профиля отменено.")
-        h.client.Bot.Send(msg)
-    }
+		// Запускаем обработчик команды /out
+		h.clockOut(fakeMessage)
+		return
+	}
 
-    // Отвечаем на callback (убираем "часики" у кнопки)
-    callbackConfig := tgbotapi.NewCallback(callback.ID, "")
-    h.client.Bot.Send(callbackConfig)
+	// Обработка callback для начала новой рабочей сессии
+	if data == "command_clock_in" {
+		// Создаем фейковое сообщение с командой /in
+		fakeMessage := &tgbotapi.Message{
+			MessageID: callback.Message.MessageID,
+			Chat: &tgbotapi.Chat{
+				ID: chatID,
+			},
+			From: callback.From,
+			Text: "/in",
+		}
+
+		// Запускаем обработчик команды /in
+		h.clockIn(fakeMessage)
+		return
+	}
+
+	// Существующая обработка для профилей
+	switch data {
+	case "confirm_delete":
+		err := h.userService.DeleteUser(chatID)
+		if err != nil {
+			msg := tgbotapi.NewMessage(chatID, "❌ Ошибка удаления профиля: "+err.Error())
+			h.client.Bot.Send(msg)
+		} else {
+			msg := tgbotapi.NewMessage(chatID, "✅ Ваш профиль успешно удален!")
+			h.client.Bot.Send(msg)
+		}
+
+	case "cancel_delete":
+		msg := tgbotapi.NewMessage(chatID, "❌ Удаление профиля отменено.")
+		h.client.Bot.Send(msg)
+	}
+
+	// Отвечаем на callback (убираем "часики" у кнопки)
+	callbackConfig := tgbotapi.NewCallback(callback.ID, "")
+	h.client.Bot.Send(callbackConfig)
 }
 
 func (h *Handler) handleMessage(message *tgbotapi.Message) {

@@ -5,8 +5,8 @@ import (
 )
 
 type Client struct {
-	Bot           *tgbotapi.BotAPI
-	UpdateConfig  tgbotapi.UpdateConfig
+	Bot          *tgbotapi.BotAPI
+	UpdateConfig tgbotapi.UpdateConfig
 }
 
 func NewClient(token string) (*Client, error) {
