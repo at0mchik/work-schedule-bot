@@ -183,11 +183,11 @@ func (s *UserMonthlyStatService) FormatStat(stat *models.UserMonthlyStat) string
 	)
 
 	if stat.OvertimeMinutes > 0 {
-		result += fmt.Sprintf("\n\n➕ Переработка: %s", overtimeTime)
+		result += fmt.Sprintf("\n\n➕ Переработка за месяц: %s", overtimeTime)
 	}
 
 	if stat.DeficitMinutes > 0 {
-		result += fmt.Sprintf("\n\n➖ Недобор: %s", deficitTime)
+		result += fmt.Sprintf("\n\n➖ Недобор за месяц: %s", deficitTime)
 	}
 
 	// Расчет оставшегося времени
@@ -204,6 +204,41 @@ func (s *UserMonthlyStatService) FormatStat(stat *models.UserMonthlyStat) string
 
 		remainingDays := stat.PlannedDays - stat.WorkedDays
 		result += fmt.Sprintf("\n\n⏳ Осталось отработать: %d дней, %s", remainingDays, remainingTime)
+
+		// Расчет необходимого времени работы в день (ДОБАВЛЕНО)
+		if remainingDays > 0 {
+			minutesPerDay := remainingMinutes / remainingDays
+			extraMinutes := remainingMinutes % remainingDays
+			
+			hoursPerDay := minutesPerDay / 60
+			minsPerDay := minutesPerDay % 60
+			
+			var dailyTime string
+			if minsPerDay == 0 {
+				dailyTime = fmt.Sprintf("%dч", hoursPerDay)
+			} else {
+				dailyTime = fmt.Sprintf("%dч %dм", hoursPerDay, minsPerDay)
+			}
+
+			if extraMinutes > 0 {
+				dailyTime += fmt.Sprintf(" + %dм", extraMinutes)
+			}
+
+			result += fmt.Sprintf("\n📈 Необходимо работать в день: %s", dailyTime)
+		}
+	}
+
+	// Если уже есть переработка
+	if stat.OvertimeMinutes > 0 && remainingMinutes <= 0 {
+		overHours := stat.OvertimeMinutes / 60
+		overMins := stat.OvertimeMinutes % 60
+		var overTime string
+		if overMins == 0 {
+			overTime = fmt.Sprintf("%dч", overHours)
+		} else {
+			overTime = fmt.Sprintf("%dч %dм", overHours, overMins)
+		}
+		result += fmt.Sprintf("\n\n✅ Вы уже выполнили норму месяца! Переработка: %s", overTime)
 	}
 
 	result += fmt.Sprintf("\n\n📅 Последнее обновление: %s",

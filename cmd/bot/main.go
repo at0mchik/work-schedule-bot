@@ -93,6 +93,7 @@ func main() {
 	absenceService := service.NewAbsenceService( // ДОБАВЛЕНО
 		absencePeriodRepo,
 		workSessionRepo,
+		userMonthlyStatRepo,
 		userRepo,
 		workScheduleRepo,
 		nonWorkingDayService,

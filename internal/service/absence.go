@@ -12,6 +12,7 @@ import (
 
 type AbsenceService struct {
 	absenceRepo          repository.AbsencePeriodRepository
+	userMonthlyStatRepo repository.UserMonthlyStatRepository
 	workSessionRepo      repository.WorkSessionRepository
 	userRepo             repository.UserRepository
 	workScheduleRepo     repository.WorkScheduleRepository
@@ -22,6 +23,7 @@ type AbsenceService struct {
 func NewAbsenceService(
 	absenceRepo repository.AbsencePeriodRepository,
 	workSessionRepo repository.WorkSessionRepository,
+	userMonthlyStatRepo repository.UserMonthlyStatRepository,
 	userRepo repository.UserRepository,
 	workScheduleRepo repository.WorkScheduleRepository,
 	nonWorkingDayService *NonWorkingDayService,
@@ -32,6 +34,7 @@ func NewAbsenceService(
 		userRepo:             userRepo,
 		workScheduleRepo:     workScheduleRepo,
 		nonWorkingDayService: nonWorkingDayService,
+		userMonthlyStatRepo: userMonthlyStatRepo,
 		logger:               logrus.New(),
 	}
 }
@@ -102,17 +105,17 @@ func (s *AbsenceService) addAbsencePeriod(
 	}
 
 	// Проверяем, что дни рабочие (для отпуска и отгула)
-	// if absenceType == models.AbsenceTypeVacation || absenceType == models.AbsenceTypeDayOff {
-	// 	for date := startDate; !date.After(endDate); date = date.AddDate(0, 0, 1) {
-	// 		isNonWorking, err := s.nonWorkingDayService.IsNonWorkingDay(date)
-	// 		if err != nil {
-	// 			s.logger.Warnf("Failed to check if day %s is non-working: %v", date.Format("02.01.2006"), err)
-	// 		} else if isNonWorking {
-	// 			return nil, fmt.Errorf("дата %s является выходным днем", date.Format("02.01.2006"))
-	// 		}
-	// 	}
-	// }
-
+	if absenceType == models.AbsenceTypeDayOff {
+		for date := startDate; !date.After(endDate); date = date.AddDate(0, 0, 1) {
+			isNonWorking, err := s.nonWorkingDayService.IsNonWorkingDay(date)
+			if err != nil {
+				s.logger.Warnf("Failed to check if day %s is non-working: %v", date.Format("02.01.2006"), err)
+			} else if isNonWorking {
+				return nil, fmt.Errorf("дата %s является выходным днем", date.Format("02.01.2006"))
+			}
+		}
+	}
+	
 	// Создаем период отсутствия
 	period := &models.AbsencePeriod{
 		UserID:    userID,
@@ -159,6 +162,13 @@ func (s *AbsenceService) createWorkSessionsForPeriod(period *models.AbsencePerio
 
 	// Создаем сессию для каждого дня периода
 	for date := period.StartDate; !date.After(period.EndDate); date = date.AddDate(0, 0, 1) {
+		nonWorkingDay, err := s.nonWorkingDayService.IsNonWorkingDay(date)
+		if err != nil{
+			return -1, fmt.Errorf("ошибка создания рабочих сессий: %v", err)
+		}
+		if nonWorkingDay{
+			continue
+		}
 		// Создаем сессию отсутствия
 		session := &models.WorkSession{
 			UserID:          period.UserID,
@@ -173,15 +183,48 @@ func (s *AbsenceService) createWorkSessionsForPeriod(period *models.AbsencePerio
 			AbsencePeriodID: &period.ID,
 		}
 
-		err := s.workSessionRepo.CreateAbsenceSession(session)
+		err = s.workSessionRepo.CreateAbsenceSession(session)
 		if err != nil {
 			return createdCount, fmt.Errorf("ошибка создания сессии на %s: %v", date.Format("02.01.2006"), err)
 		}
-
+		if err := s.updateMonthlyStats(period.UserID, session); err != nil {
+			s.logger.WithError(err).Error("Failed to update monthly stats after clock out")
+		}
+		
+		
 		createdCount++
+		
+		
 	}
 
 	return createdCount, nil
+}
+
+func (s *AbsenceService) updateMonthlyStats(userID uint, session *models.WorkSession) error {
+	year := session.Date.Year()
+	month := int(session.Date.Month())
+
+	// Получаем статистику за месяц
+	days, minutes, err := s.workSessionRepo.GetStatsByUserAndMonth(userID, year, month)
+	if err != nil {
+		return err
+	}
+
+	// Обновляем месячную статистику
+	err = s.userMonthlyStatRepo.UpdateWorkedStats(userID, year, month, days, minutes)
+	if err != nil {
+		return err
+	}
+
+	s.logger.WithFields(logrus.Fields{
+		"user_id": userID,
+		"year":    year,
+		"month":   month,
+		"days":    days,
+		"minutes": minutes,
+	}).Info("Monthly stats updated after clock out")
+
+	return nil
 }
 
 // GetUserAbsences возвращает все периоды отсутствия пользователя
