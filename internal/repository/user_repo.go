@@ -7,21 +7,21 @@ import (
 	"gorm.io/gorm"
 )
 
-type GormUserRepository struct {
+type UserRepository struct {
 	db *gorm.DB
 }
 
-func NewGormUserRepository(db *gorm.DB) (GormUserRepository, error) {
+func NewUserRepository(db *gorm.DB) (UserRepository, error) {
 	// Автомиграция - создает таблицы если их нет
 	err := db.AutoMigrate(&models.User{})
 	if err != nil {
-		return GormUserRepository{}, err
+		return UserRepository{}, err
 	}
 
-	return GormUserRepository{db: db}, nil
+	return UserRepository{db: db}, nil
 }
 
-func (r *GormUserRepository) Create(user *models.User) error {
+func (r *UserRepository) Create(user *models.User) error {
 	// Проверяем, существует ли уже пользователь
 	var existingUser models.User
 	result := r.db.Where("chat_id = ?", user.ChatID).First(&existingUser)
@@ -37,7 +37,7 @@ func (r *GormUserRepository) Create(user *models.User) error {
 	return nil
 }
 
-func (r *GormUserRepository) GetByChatID(chatID int64) (*models.User, error) {
+func (r *UserRepository) GetByChatID(chatID int64) (*models.User, error) {
 	var user models.User
 	result := r.db.Where("chat_id = ?", chatID).First(&user)
 
@@ -52,7 +52,7 @@ func (r *GormUserRepository) GetByChatID(chatID int64) (*models.User, error) {
 	return &user, nil
 }
 
-func (r *GormUserRepository) Update(user *models.User) error {
+func (r *UserRepository) Update(user *models.User) error {
 	// Проверяем существование пользователя
 	var existingUser models.User
 	result := r.db.Where("chat_id = ?", user.ChatID).First(&existingUser)
@@ -68,7 +68,7 @@ func (r *GormUserRepository) Update(user *models.User) error {
 	return nil
 }
 
-func (r *GormUserRepository) Delete(chatID int64) error {
+func (r *UserRepository) Delete(chatID int64) error {
 	result := r.db.Where("chat_id = ?", chatID).Delete(&models.User{})
 
 	if result.Error != nil {
@@ -82,7 +82,7 @@ func (r *GormUserRepository) Delete(chatID int64) error {
 	return nil
 }
 
-func (r *GormUserRepository) Exists(chatID int64) (bool, error) {
+func (r *UserRepository) Exists(chatID int64) (bool, error) {
 	var count int64
 	result := r.db.Model(&models.User{}).Where("chat_id = ?", chatID).Count(&count)
 
@@ -93,7 +93,7 @@ func (r *GormUserRepository) Exists(chatID int64) (bool, error) {
 	return count > 0, nil
 }
 
-func (r *GormUserRepository) GetAll() ([]*models.User, error) {
+func (r *UserRepository) GetAll() ([]*models.User, error) {
 	var users []*models.User
 	result := r.db.Find(&users)
 
@@ -104,7 +104,7 @@ func (r *GormUserRepository) GetAll() ([]*models.User, error) {
 	return users, nil
 }
 
-func (r *GormUserRepository) UpdateRole(chatID int64, role models.Role) error {
+func (r *UserRepository) UpdateRole(chatID int64, role models.Role) error {
 	result := r.db.Model(&models.User{}).
 		Where("chat_id = ?", chatID).
 		Update("role", role)
@@ -120,7 +120,7 @@ func (r *GormUserRepository) UpdateRole(chatID int64, role models.Role) error {
 	return nil
 }
 
-func (r *GormUserRepository) GetAdmins() ([]*models.User, error) {
+func (r *UserRepository) GetAdmins() ([]*models.User, error) {
 	var admins []*models.User
 	result := r.db.Where("role = ?", models.RoleAdmin).Find(&admins)
 
@@ -131,7 +131,7 @@ func (r *GormUserRepository) GetAdmins() ([]*models.User, error) {
 	return admins, nil
 }
 
-func (r *GormUserRepository) GetStats() (int, int, error) {
+func (r *UserRepository) GetStats() (int, int, error) {
 	var total int64
 	var admins int64
 
@@ -153,7 +153,7 @@ func (r *GormUserRepository) GetStats() (int, int, error) {
 }
 
 // Дополнительные методы для GORM
-func (r *GormUserRepository) Close() error {
+func (r *UserRepository) Close() error {
 	sqlDB, err := r.db.DB()
 	if err != nil {
 		return err

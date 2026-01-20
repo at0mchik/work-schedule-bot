@@ -14,13 +14,15 @@ type WorkSessionService struct {
 	sessionRepo         repository.WorkSessionRepository
 	userMonthlyStatRepo repository.UserMonthlyStatRepository
 	workScheduleRepo    repository.WorkScheduleRepository
+	absenceRepo         repository.AbsencePeriodRepository
 	logger              *logrus.Logger
 }
 
 func NewWorkSessionService(
-	sessionRepo repository.WorkSessionRepository,
+	sessionRepo 		repository.WorkSessionRepository,
 	userMonthlyStatRepo repository.UserMonthlyStatRepository,
-	workScheduleRepo repository.WorkScheduleRepository,
+	workScheduleRepo 	repository.WorkScheduleRepository,
+	absenceRepo         repository.AbsencePeriodRepository,
 ) *WorkSessionService {
 	logger := logrus.New()
 	logger.SetFormatter(&logrus.TextFormatter{
@@ -212,6 +214,29 @@ func (s *WorkSessionService) FormatSession(session *models.WorkSession) string {
 		return "❌ Сессия не найдена"
 	}
 
+	// Если это отсутствие
+	if session.IsAbsence() {
+		emoji := session.GetAbsenceEmoji()
+		sessionType := session.FormatSessionType()
+
+		return fmt.Sprintf(
+			`%s %s: %s
+
+📅 Дата: %s
+⏰ Время: 09:00 - 17:40
+⏳ Отметка: %d:%02d часов
+📊 Статус: %s
+
+%s`,
+			emoji, sessionType,
+			session.Date.Format("02.01.2006"),
+			session.Date.Format("02.01.2006"),
+			session.RequiredMinutes/60, session.RequiredMinutes%60,
+			"✅ Засчитано",
+			"💡 Этот день засчитан как рабочий согласно графику",
+		)
+	}
+
 	dateStr := session.Date.Format("02.01.2006")
 	timeStr := session.FormatTime()
 	durationStr := session.Duration()
@@ -356,28 +381,59 @@ func (s *WorkSessionService) GetRequiredMinutesForToday(userID uint) (int, error
 }
 
 // CanClockIn проверяет, может ли пользователь начать работу
-func (s *WorkSessionService) CanClockIn(userID uint) (bool, string, error) {
+func (s *WorkSessionService) CanClockIn(userID uint, targetTime time.Time) (bool, string, error) {
 	// Проверяем активную сессию
-	hasActive, err := s.sessionRepo.UserHasActiveSession(userID)
+	activeSession, err := s.sessionRepo.GetActiveByUserID(userID)
 	if err != nil {
 		return false, "", err
 	}
 
-	if hasActive {
+	if activeSession != nil {
 		return false, "у вас уже есть активная рабочая сессия", nil
 	}
 
-	// Проверяем сессию на сегодня
-	// hasToday, err := s.sessionRepo.UserHasSessionToday(userID)
-	// if err != nil {
-	//     return false, "", err
-	// }
+	todaySession, err := s.sessionRepo.GetByUserAndDate(userID, targetTime)
+	logrus.Info("=========================================\n=========================================\n=========================================\n\n\n", todaySession)
+	if err != nil {
+		return false, "", err
+	}
 
-	// if hasToday {
-	//     return false, "сегодня вы уже отмечались", nil
-	// }
+	if todaySession != nil {
+		// Проверяем, не является ли это отсутствием
+		if todaySession.IsAbsence() {
+			return false, "сегодня у вас " + strings.ToLower(todaySession.FormatSessionType()), nil
+		}
+
+		if todaySession.IsCompleted() {
+			return false, "вы уже завершили работу сегодня", nil
+		}
+	}
+
+	// Проверяем, не находится ли пользователь в отпуске/больничном
+	if s.absenceRepo != nil {
+		currentAbsence, err := s.absenceRepo.GetCurrentAbsence(userID, targetTime)
+		if err != nil {
+			s.logger.Warnf("Failed to check current absence: %v", err)
+		} else if currentAbsence != nil {
+			return false, "сегодня у вас " + getAbsenceTypeText(currentAbsence.Type), nil
+		}
+	}
 
 	return true, "", nil
+}
+
+// Вспомогательная функция
+func getAbsenceTypeText(absenceType string) string {
+	switch absenceType {
+	case models.AbsenceTypeVacation:
+		return "отпуск"
+	case models.AbsenceTypeSickLeave:
+		return "больничный"
+	case models.AbsenceTypeDayOff:
+		return "отгул"
+	default:
+		return "отсутствие"
+	}
 }
 
 // CanClockOut проверяет, может ли пользователь закончить работу

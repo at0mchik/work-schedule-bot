@@ -40,7 +40,7 @@ func main() {
 	}
 
 	// Создаем репозитории
-	userRepo, err := repository.NewGormUserRepository(db)
+	userRepo, err := repository.NewUserRepository(db)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to create user repository")
 	}
@@ -65,9 +65,14 @@ func main() {
 		logrus.WithError(err).Fatal("Failed to create non-working day repository")
 	}
 
+	absencePeriodRepo, err := repository.NewGormAbsencePeriodRepository(db)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to create absence period repository")
+	}
+
 	// Создаем сервисы
 	nonWorkingDayService := service.NewNonWorkingDayService(nonWorkingDayRepo)
-	
+
 	// Загружаем выходные дни из JSON
 	logrus.Info("Loading non-working days from JSON...")
 	count, err := nonWorkingDayService.LoadFromJSON("jsons/weekends_2026.json")
@@ -77,12 +82,20 @@ func main() {
 	logrus.Infof("Loaded %d non-working days for 2026", count)
 
 	userMonthlyStatService := service.NewUserMonthlyStatService(userMonthlyStatRepo, userRepo)
-	
+
 	// Создаем WorkScheduleService с зависимостью от NonWorkingDayService
 	workScheduleService := service.NewWorkScheduleService(
 		workScheduleRepo,
 		userMonthlyStatService,
 		nonWorkingDayService, // ДОБАВЛЕНО
+	)
+
+	absenceService := service.NewAbsenceService( // ДОБАВЛЕНО
+		absencePeriodRepo,
+		workSessionRepo,
+		userRepo,
+		workScheduleRepo,
+		nonWorkingDayService,
 	)
 
 	// Автоматически создаем/обновляем графики на основе выходных дней
@@ -92,12 +105,12 @@ func main() {
 		logrus.WithError(err).Error("Failed to generate work schedules")
 	} else {
 		logrus.Infof("Generated %d work schedules for 2026", len(generatedSchedules))
-		
+
 		// Проверяем созданные графики
 		totalDays := 0
 		for _, schedule := range generatedSchedules {
 			totalDays += schedule.WorkDays
-			logrus.Infof("Month %02d: %d working days, %d minutes per day", 
+			logrus.Infof("Month %02d: %d working days, %d minutes per day",
 				schedule.Month, schedule.WorkDays, schedule.WorkMinutesPerDay)
 		}
 		logrus.Infof("Total working days in 2026: %d", totalDays)
@@ -109,6 +122,7 @@ func main() {
 		workSessionRepo,
 		userMonthlyStatRepo,
 		workScheduleRepo,
+		absencePeriodRepo,
 	)
 
 	// Инициализируем администратора
@@ -134,6 +148,7 @@ func main() {
 		userMonthlyStatService,
 		workSessionService,
 		nonWorkingDayService,
+		absenceService,
 		cfg,
 	)
 

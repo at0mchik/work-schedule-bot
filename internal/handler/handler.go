@@ -17,6 +17,7 @@ type Handler struct {
 	userMonthlyStatService *service.UserMonthlyStatService
 	workSessionService     *service.WorkSessionService
 	nonWorkingDayService   *service.NonWorkingDayService
+	absenceService         *service.AbsenceService // ДОБАВЛЕНО
 	userStates             map[int64]string
 	config                 *config.BotConfig
 }
@@ -28,6 +29,7 @@ func NewHandler(
 	userMonthlyStatService *service.UserMonthlyStatService,
 	workSessionService *service.WorkSessionService,
 	nonWorkingDayService *service.NonWorkingDayService,
+	absenceService *service.AbsenceService, // ДОБАВЛЕНО
 	cfg *config.BotConfig,
 ) *Handler {
 	return &Handler{
@@ -36,7 +38,8 @@ func NewHandler(
 		workScheduleService:    workScheduleService,
 		userMonthlyStatService: userMonthlyStatService,
 		workSessionService:     workSessionService,
-		nonWorkingDayService:   nonWorkingDayService, 
+		nonWorkingDayService:   nonWorkingDayService,
+		absenceService:         absenceService, // ДОБАВЛЕНО
 		userStates:             make(map[int64]string),
 		config:                 cfg,
 	}

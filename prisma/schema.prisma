@@ -21,8 +21,26 @@ model User {
   // Relations
   monthlyStats       UserMonthlyStat[]
   workSessions       WorkSession[]
+  absencePeriods     AbsencePeriod[]
   
   @@map("users")
+}
+
+model AbsencePeriod {
+  id          Int       @id @default(autoincrement())
+  userId      Int       @map("user_id")
+  startDate   DateTime  @map("start_date")
+  endDate     DateTime  @map("end_date")
+  type        String    // "vacation", "sick_leave", "day_off"
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workSessions WorkSession[]
+  
+  @@index([userId, startDate])
+  @@map("absence_periods")
 }
 
 model WorkSchedule {
@@ -63,7 +81,15 @@ model UserMonthlyStat {
 model WorkSession {
   id                  Int       @id @default(autoincrement())
   userId              Int       @map("user_id")
-  date                DateTime  // дата работы
+  date                DateTime  // дата работы/отсутствия
+  
+  // Тип сессии (ДОБАВЛЕНО)
+  sessionType         String    @default("work") @map("session_type")
+  // "work" - обычная работа
+  // "vacation" - отпуск
+  // "sick_leave" - больничный
+  // "day_off" - отгул
+  
   clockInTime         DateTime  @map("clock_in_time")
   clockOutTime        DateTime? @map("clock_out_time")
   requiredMinutes     Int       @default(480) @map("required_minutes")
@@ -76,6 +102,8 @@ model WorkSession {
   
   // Relations
   user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  absencePeriod       AbsencePeriod? @relation(fields: [absencePeriodId], references: [id])
+  absencePeriodId     Int?      @map("absence_period_id")
   
   @@unique([userId, date])
   @@map("work_sessions")

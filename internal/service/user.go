@@ -10,14 +10,14 @@ import (
 )
 
 type UserService struct {
-	repo                   repository.GormUserRepository
+	repo                   repository.UserRepository
 	workScheduleRepo       repository.WorkScheduleRepository // НОВОЕ
 	userMonthlyStatService *UserMonthlyStatService           // НОВОЕ
 	logger                 *logrus.Logger
 }
 
 func NewUserService(
-	repo repository.GormUserRepository,
+	repo repository.UserRepository,
 	workScheduleRepo repository.WorkScheduleRepository, // НОВОЕ
 	userMonthlyStatService *UserMonthlyStatService, // НОВОЕ
 ) *UserService {
@@ -87,28 +87,12 @@ func (s *UserService) createMonthlyStatsForNewUser(userID uint) error {
 		return err
 	}
 
-	// Создаем статистику для каждого графика
-	for _, schedule := range schedules {
-		stat := &models.UserMonthlyStat{
-			UserID:         userID,
-			Year:           schedule.Year,
-			Month:          schedule.Month,
-			PlannedDays:    schedule.WorkDays,
-			PlannedMinutes: schedule.TotalMinutes,
-		}
-		stat.CalculateStats()
-
-		// Используем репозиторий статистики через сервис
-		_, err := s.userMonthlyStatService.GetUserStatByMonth(userID, schedule.Year, schedule.Month)
-		if err != nil {
-			// Если статистики нет, создаем ее
-			if err := s.userMonthlyStatService.UpdateWorkedTime(userID, schedule.Year, schedule.Month, 0, 0); err != nil {
-				s.logger.WithError(err).Error("Failed to create monthly stat for new user")
-				return err
-			}
-		}
+	
+	if err := s.userMonthlyStatService.CreateStatsForNewUser(userID, schedules) ; err != nil {
+		s.logger.WithError(err).Error("Failed to create monthly stat for new user")
+		return err
 	}
-
+	
 	s.logger.WithFields(logrus.Fields{
 		"user_id":   userID,
 		"schedules": len(schedules),
@@ -323,5 +307,18 @@ func (s *UserService) InitializeAdmin(adminChatID int64) error {
 		Role:      models.RoleAdmin,
 	}
 
-	return s.repo.Create(adminUser)
+	err = s.repo.Create(adminUser)
+	if err != nil {
+		s.logger.WithError(err).Error("Failed to create admin in repository")
+		return fmt.Errorf("ошибка создания админа: %v", err)
+	}
+
+	// Создаем статистику для нового пользователя для всех существующих графиков
+	go func() {
+		if err := s.createMonthlyStatsForNewUser(adminUser.ID); err != nil {
+			s.logger.WithError(err).Error("Failed to create monthly stats for admin")
+		}
+	}()
+
+	return nil
 }

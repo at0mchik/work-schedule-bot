@@ -199,7 +199,6 @@ func (s *WorkScheduleService) GetWorkMinutesForDay(date time.Time) (int, error) 
 }
 
 // CreateSchedule создает новый рабочий график
-// service/work_schedule_service.go
 func (s *WorkScheduleService) CreateSchedule(year, month, workDays, workMinutesPerDay int) (*models.WorkSchedule, error) {
 	s.logger.WithFields(logrus.Fields{
 		"year":                 year,

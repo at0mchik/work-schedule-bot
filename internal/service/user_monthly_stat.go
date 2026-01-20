@@ -12,13 +12,13 @@ import (
 
 type UserMonthlyStatService struct {
 	statRepo repository.UserMonthlyStatRepository
-	userRepo repository.GormUserRepository
+	userRepo repository.UserRepository
 	logger   *logrus.Logger
 }
 
 func NewUserMonthlyStatService(
 	statRepo repository.UserMonthlyStatRepository,
-	userRepo repository.GormUserRepository,
+	userRepo repository.UserRepository,
 ) *UserMonthlyStatService {
 	logger := logrus.New()
 	logger.SetFormatter(&logrus.TextFormatter{
@@ -346,6 +346,10 @@ func (s *UserMonthlyStatService) GetRequiredMinutesByUserID(userID uint, year in
 		s.logger.WithError(err).Error("Failed to get monthly stats")
 		return 0, err
 	}
+	// if stats == nil{
+	// 	s.logger.Info("No monthly stat")
+	// 	return 0, nil
+	// }
 
 	return stats.DeficitMinutes / (stats.PlannedDays - stats.WorkedDays), nil
 }

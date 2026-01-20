@@ -162,7 +162,7 @@ func (h *Handler) clockIn(message *tgbotapi.Message) {
 	}
 
 	// Проверяем, может ли пользователь начать работу
-	canClockIn, reason, err := h.workSessionService.CanClockIn(user.ID)
+	canClockIn, reason, err := h.workSessionService.CanClockIn(user.ID, targetTime)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to check clock in eligibility")
 		msg := tgbotapi.NewMessage(chatID, "❌ Ошибка проверки: "+err.Error())

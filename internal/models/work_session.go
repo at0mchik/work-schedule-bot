@@ -24,16 +24,35 @@ type WorkSession struct {
 	// Статус
 	Status string `gorm:"type:varchar(20);not null;default:'active';index" json:"status"`
 
+	// Тип сессии (ДОБАВЛЕНО)
+	SessionType string `gorm:"type:varchar(20);not null;default:'work';index" json:"session_type"`
+	// "work" - обычная работа
+	// "vacation" - отпуск
+	// "sick_leave" - больничный
+	// "day_off" - отгул
+
 	Notes     string    `json:"notes"`
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 
-	User User `gorm:"foreignKey:UserID"`
+	// Ссылка на период отсутствия (ДОБАВЛЕНО)
+	AbsencePeriodID *uint `gorm:"index" json:"absence_period_id"`
+
+	User          User          `gorm:"foreignKey:UserID"`
+	AbsencePeriod *AbsencePeriod `gorm:"foreignKey:AbsencePeriodID" json:"absence_period,omitempty"`
 }
 
 func (WorkSession) TableName() string {
 	return "work_sessions"
 }
+
+// Типы сессий (ДОБАВЛЕНО)
+const (
+	SessionTypeWork      = "work"
+	SessionTypeVacation  = "vacation"
+	SessionTypeSickLeave = "sick_leave"
+	SessionTypeDayOff    = "day_off"
+)
 
 // Статусы рабочих сессий
 const (
@@ -134,4 +153,41 @@ func (ws *WorkSession) IsValid() bool {
 		return false
 	}
 	return true
+}
+
+// IsAbsence проверяет, является ли сессия отсутствием
+func (ws *WorkSession) IsAbsence() bool {
+	return ws.SessionType == SessionTypeVacation || 
+		ws.SessionType == SessionTypeSickLeave || 
+		ws.SessionType == SessionTypeDayOff
+}
+
+// GetAbsenceEmoji возвращает эмодзи для типа отсутствия
+func (ws *WorkSession) GetAbsenceEmoji() string {
+	switch ws.SessionType {
+	case SessionTypeVacation:
+		return "🏖️"
+	case SessionTypeSickLeave:
+		return "🏥"
+	case SessionTypeDayOff:
+		return "🎯"
+	default:
+		return "💼"
+	}
+}
+
+// FormatSessionType возвращает читаемое название типа сессии
+func (ws *WorkSession) FormatSessionType() string {
+	switch ws.SessionType {
+	case SessionTypeWork:
+		return "Работа"
+	case SessionTypeVacation:
+		return "Отпуск"
+	case SessionTypeSickLeave:
+		return "Больничный"
+	case SessionTypeDayOff:
+		return "Отгул"
+	default:
+		return ws.SessionType
+	}
 }

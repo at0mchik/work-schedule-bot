@@ -26,6 +26,10 @@ type WorkSessionRepository interface {
 	GetStatsByUserAndMonth(userID uint, year, month int) (int, int, error) // дни, минуты
 	UserHasActiveSession(userID uint) (bool, error)
 	UserHasSessionToday(userID uint) (bool, error)
+	GetAbsenceDays(userID uint, startDate, endDate time.Time) ([]models.WorkSession, error)
+	GetAbsenceDaysByType(userID uint, sessionType string, startDate, endDate time.Time) ([]models.WorkSession, error)
+	CheckDateAvailability(userID uint, date time.Time) (bool, error)
+	CreateAbsenceSession(session *models.WorkSession) error
 }
 
 type GormWorkSessionRepository struct {
@@ -202,8 +206,11 @@ func (r *GormWorkSessionRepository) GetCompletedByUserID(userID uint) (*models.W
 
 func (r *GormWorkSessionRepository) GetByUserAndDate(userID uint, date time.Time) (*models.WorkSession, error) {
 	var session models.WorkSession
-	result := r.db.Where("user_id = ? AND date = ?", userID, date.Format("2006-01-02")).First(&session)
+	searchDate := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.Local)
+	result := r.db.Where("user_id = ? AND date = ?", userID, searchDate).First(&session)
 
+	logrus.Info("===\n=====\n=====\n\n\n", date.Format("2006-01-02"))
+	
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		r.logger.WithFields(logrus.Fields{
 			"user_id": userID,
@@ -441,4 +448,39 @@ func (r *GormWorkSessionRepository) UserHasSessionToday(userID uint) (bool, erro
 		return false, err
 	}
 	return session != nil, nil
+}
+
+// GetAbsenceDays возвращает дни отсутствия пользователя
+func (r *GormWorkSessionRepository) GetAbsenceDays(userID uint, startDate, endDate time.Time) ([]models.WorkSession, error) {
+	var sessions []models.WorkSession
+	err := r.db.Where("user_id = ? AND date BETWEEN ? AND ? AND session_type IN (?, ?, ?)", 
+		userID, startDate, endDate, 
+		models.SessionTypeVacation, models.SessionTypeSickLeave, models.SessionTypeDayOff).
+		Order("date DESC").
+		Find(&sessions).Error
+	return sessions, err
+}
+
+// GetAbsenceDaysByType возвращает дни отсутствия определенного типа
+func (r *GormWorkSessionRepository) GetAbsenceDaysByType(userID uint, sessionType string, startDate, endDate time.Time) ([]models.WorkSession, error) {
+	var sessions []models.WorkSession
+	err := r.db.Where("user_id = ? AND date BETWEEN ? AND ? AND session_type = ?", 
+		userID, startDate, endDate, sessionType).
+		Order("date DESC").
+		Find(&sessions).Error
+	return sessions, err
+}
+
+// CheckDateAvailability проверяет, можно ли добавить сессию на эту дату
+func (r *GormWorkSessionRepository) CheckDateAvailability(userID uint, date time.Time) (bool, error) {
+	var count int64
+	err := r.db.Model(&models.WorkSession{}).
+		Where("user_id = ? AND date = ?", userID, date).
+		Count(&count).Error
+	return count == 0, err
+}
+
+// CreateAbsenceSession создает сессию отсутствия
+func (r *GormWorkSessionRepository) CreateAbsenceSession(session *models.WorkSession) error {
+	return r.db.Create(session).Error
 }
