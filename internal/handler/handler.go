@@ -15,7 +15,8 @@ type Handler struct {
 	userService            *service.UserService
 	workScheduleService    *service.WorkScheduleService
 	userMonthlyStatService *service.UserMonthlyStatService
-	workSessionService     *service.WorkSessionService // НОВОЕ
+	workSessionService     *service.WorkSessionService
+	nonWorkingDayService   *service.NonWorkingDayService
 	userStates             map[int64]string
 	config                 *config.BotConfig
 }
@@ -25,7 +26,8 @@ func NewHandler(
 	userService *service.UserService,
 	workScheduleService *service.WorkScheduleService,
 	userMonthlyStatService *service.UserMonthlyStatService,
-	workSessionService *service.WorkSessionService, // НОВОЕ
+	workSessionService *service.WorkSessionService,
+	nonWorkingDayService *service.NonWorkingDayService,
 	cfg *config.BotConfig,
 ) *Handler {
 	return &Handler{
@@ -33,7 +35,8 @@ func NewHandler(
 		userService:            userService,
 		workScheduleService:    workScheduleService,
 		userMonthlyStatService: userMonthlyStatService,
-		workSessionService:     workSessionService, // НОВОЕ
+		workSessionService:     workSessionService,
+		nonWorkingDayService:   nonWorkingDayService, 
 		userStates:             make(map[int64]string),
 		config:                 cfg,
 	}
@@ -67,6 +70,29 @@ func (h *Handler) handleCallbackQuery(callback *tgbotapi.CallbackQuery) {
 	// Обработка callback для графиков
 	if strings.HasPrefix(data, "confirm_delete_schedule_") || data == "cancel_delete_schedule" {
 		h.handleScheduleCallback(callback)
+		return
+	}
+
+	// Обработка завершения работы в выходной день
+	if data == "confirm_clockout_holiday" {
+		// Создаем фейковое сообщение с командой /out (продолжаем завершение)
+		fakeMessage := &tgbotapi.Message{
+			MessageID: callback.Message.MessageID,
+			Chat: &tgbotapi.Chat{
+				ID: chatID,
+			},
+			From: callback.From,
+			Text: "/out confirm_holiday",
+		}
+
+		// Запускаем обработчик команды /out с флагом подтверждения
+		h.clockOut(fakeMessage)
+		return
+	}
+
+	if data == "cancel_clockout_holiday" {
+		msg := tgbotapi.NewMessage(chatID, "❌ Завершение работы отменено.")
+		h.client.Bot.Send(msg)
 		return
 	}
 

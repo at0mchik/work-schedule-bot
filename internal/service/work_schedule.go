@@ -13,19 +13,189 @@ import (
 
 type WorkScheduleService struct {
 	repo                   repository.WorkScheduleRepository
-	userMonthlyStatService *UserMonthlyStatService // ДОБАВЛЕНО
+	userMonthlyStatService *UserMonthlyStatService
+	nonWorkingDayService   *NonWorkingDayService // ДОБАВЛЕНО
 	logger                 *logrus.Logger
 }
 
 func NewWorkScheduleService(
 	repo repository.WorkScheduleRepository,
-	userMonthlyStatService *UserMonthlyStatService, // ДОБАВЛЕНО
+	userMonthlyStatService *UserMonthlyStatService,
+	nonWorkingDayService *NonWorkingDayService, // ДОБАВЛЕНО
 ) *WorkScheduleService {
 	return &WorkScheduleService{
 		repo:                   repo,
-		userMonthlyStatService: userMonthlyStatService, // ДОБАВЛЕНО
+		userMonthlyStatService: userMonthlyStatService,
+		nonWorkingDayService:   nonWorkingDayService, // ДОБАВЛЕНО
 		logger:                 logrus.New(),
 	}
+}
+
+// GenerateSchedulesFromNonWorkingDays автоматически создает/обновляет графики на основе выходных дней
+func (s *WorkScheduleService) GenerateSchedulesFromNonWorkingDays(year int, workMinutesPerDay int) ([]*models.WorkSchedule, error) {
+	s.logger.Infof("Generating schedules for year %d with %d minutes per day", year, workMinutesPerDay)
+	
+	var generatedSchedules []*models.WorkSchedule
+	
+	// Для каждого месяца года
+	for month := 1; month <= 12; month++ {
+		schedule, err := s.GenerateScheduleForMonth(year, month, workMinutesPerDay)
+		if err != nil {
+			s.logger.Errorf("Failed to generate schedule for %d-%02d: %v", year, month, err)
+			continue
+		}
+		generatedSchedules = append(generatedSchedules, schedule)
+	}
+	
+	s.logger.Infof("Generated %d schedules for year %d", len(generatedSchedules), year)
+	return generatedSchedules, nil
+}
+
+// GenerateScheduleForMonth создает или обновляет график для конкретного месяца
+func (s *WorkScheduleService) GenerateScheduleForMonth(year, month, workMinutesPerDay int) (*models.WorkSchedule, error) {
+	// Получаем выходные дни для этого месяца
+	nonWorkingDays, err := s.nonWorkingDayService.GetNonWorkingDaysForMonth(year, month)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get non-working days: %v", err)
+	}
+	
+	// Получаем общее количество дней в месяце
+	daysInMonth := time.Date(year, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC).Day()
+	
+	// Рассчитываем рабочие дни: всего дней в месяце минус выходные
+	workDays := daysInMonth - len(nonWorkingDays)
+	
+	// Проверяем, существует ли уже график для этого месяца
+	existingSchedule, err := s.repo.GetByYearMonth(year, month)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check existing schedule: %v", err)
+	}
+	
+	if existingSchedule != nil {
+		// Обновляем существующий график
+		s.logger.Infof("Updating existing schedule for %d-%02d: %d → %d working days", 
+			year, month, existingSchedule.WorkDays, workDays)
+		
+		// Сохраняем оригинальное значение workMinutesPerDay если оно было
+		if existingSchedule.WorkMinutesPerDay > 0 {
+			workMinutesPerDay = existingSchedule.WorkMinutesPerDay
+		}
+		
+		updatedSchedule, err := s.UpdateSchedule(existingSchedule.ID, workDays, workMinutesPerDay)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update schedule: %v", err)
+		}
+		return updatedSchedule, nil
+	} else {
+		// Создаем новый график
+		s.logger.Infof("Creating new schedule for %d-%02d: %d working days, %d minutes per day", 
+			year, month, workDays, workMinutesPerDay)
+		
+		newSchedule, err := s.CreateSchedule(year, month, workDays, workMinutesPerDay)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create schedule: %v", err)
+		}
+		return newSchedule, nil
+	}
+}
+
+// CalculateWorkingDaysForMonth рассчитывает количество рабочих дней в месяце
+func (s *WorkScheduleService) CalculateWorkingDaysForMonth(year, month int) (int, error) {
+	// Получаем общее количество дней в месяце
+	daysInMonth := time.Date(year, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC).Day()
+	
+	// Получаем выходные дни для этого месяца
+	nonWorkingDays, err := s.nonWorkingDayService.GetNonWorkingDaysForMonth(year, month)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get non-working days: %v", err)
+	}
+	
+	// Рабочие дни = всего дней в месяце - выходные
+	return daysInMonth - len(nonWorkingDays), nil
+}
+
+// UpdateAllSchedulesFromNonWorkingDays обновляет все графики на основе текущих выходных дней
+func (s *WorkScheduleService) UpdateAllSchedulesFromNonWorkingDays() (int, error) {
+	s.logger.Info("Updating all schedules from non-working days")
+	
+	// Получаем все графики
+	allSchedules, err := s.repo.GetAll()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get all schedules: %v", err)
+	}
+	
+	updatedCount := 0
+	for _, schedule := range allSchedules {
+		// Рассчитываем рабочие дни для этого месяца
+		calculatedWorkDays, err := s.CalculateWorkingDaysForMonth(schedule.Year, schedule.Month)
+		if err != nil {
+			s.logger.Errorf("Failed to calculate work days for %d-%02d: %v", 
+				schedule.Year, schedule.Month, err)
+			continue
+		}
+		
+		// Если количество рабочих дней изменилось, обновляем график
+		if schedule.WorkDays != calculatedWorkDays {
+			s.logger.Infof("Updating schedule for %d-%02d: %d → %d working days", 
+				schedule.Year, schedule.Month, schedule.WorkDays, calculatedWorkDays)
+			
+			_, err = s.UpdateSchedule(schedule.ID, calculatedWorkDays, schedule.WorkMinutesPerDay)
+			if err != nil {
+				s.logger.Errorf("Failed to update schedule %d: %v", schedule.ID, err)
+				continue
+			}
+			updatedCount++
+		}
+	}
+	
+	s.logger.Infof("Updated %d schedules", updatedCount)
+	return updatedCount, nil
+}
+
+// IsWorkingDay проверяет, является ли дата рабочим днем
+func (s *WorkScheduleService) IsWorkingDay(date time.Time) (bool, error) {
+	// Проверяем, является ли дата выходным днем
+	isNonWorking, err := s.nonWorkingDayService.IsNonWorkingDay(date)
+	if err != nil {
+		return false, err
+	}
+	
+	// Если это выходной день, то не рабочий
+	if isNonWorking {
+		return false, nil
+	}
+	
+	// Проверяем день недели (суббота и воскресенье обычно не рабочие,
+	// но у нас выходные уже в базе, включая переносы)
+	// Можно добавить дополнительную логику, если нужно
+	
+	return true, nil
+}
+
+// GetWorkMinutesForDay возвращает количество рабочих минут для указанной даты
+func (s *WorkScheduleService) GetWorkMinutesForDay(date time.Time) (int, error) {
+	// Проверяем, является ли день рабочим
+	isWorking, err := s.IsWorkingDay(date)
+	if err != nil {
+		return 0, err
+	}
+	
+	if !isWorking {
+		return 0, nil
+	}
+	
+	// Получаем график для этого месяца
+	schedule, err := s.repo.GetByYearMonth(date.Year(), int(date.Month()))
+	if err != nil {
+		return 0, err
+	}
+	
+	if schedule == nil {
+		// Если график не установлен, используем значение по умолчанию
+		return 480, nil // 8 часов по умолчанию
+	}
+	
+	return schedule.WorkMinutesPerDay, nil
 }
 
 // CreateSchedule создает новый рабочий график
@@ -51,7 +221,7 @@ func (s *WorkScheduleService) CreateSchedule(year, month, workDays, workMinutesP
 	}
 
 	// Создаем график
-	err := s.repo.Create(schedule) // Только ошибка, schedule обновляется по ссылке
+	err := s.repo.Create(schedule)
 	if err != nil {
 		s.logger.WithError(err).Error("Failed to create schedule")
 		return nil, err

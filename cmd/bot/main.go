@@ -9,7 +9,6 @@ import (
 	"work-schedule-bot/internal/repository"
 	"work-schedule-bot/internal/service"
 	"work-schedule-bot/pkg/telegram"
-	// "work-schedule-bot/pkg/weekends"
 
 	"github.com/sirupsen/logrus"
 	"gorm.io/driver/sqlite"
@@ -23,7 +22,7 @@ func main() {
 
 	// Инициализируем SQLite базу данных
 	db, err := gorm.Open(sqlite.Open(cfg.DatabaseURL), &gorm.Config{
-		DisableForeignKeyConstraintWhenMigrating: true, // SQLite ограничения
+		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	if err != nil {
 		logrus.Fatal("Failed to connect to database:", err)
@@ -35,24 +34,22 @@ func main() {
 		logrus.Fatal("Failed to get database instance:", err)
 	}
 
-	// Включаем поддержку внешних ключей (требуется для SQLite)
 	_, err = sqlDB.Exec("PRAGMA foreign_keys = ON")
 	if err != nil {
 		logrus.Infof("Warning: Failed to enable foreign keys: %v", err)
 	}
 
+	// Создаем репозитории
 	userRepo, err := repository.NewGormUserRepository(db)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to create user repository")
 	}
 
-	// Создаем репозиторий графиков работы
 	workScheduleRepo, err := repository.NewGormWorkScheduleRepository(db)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to create work schedule repository")
 	}
 
-	// Создаем репозиторий статистики пользователей
 	userMonthlyStatRepo, err := repository.NewGormUserMonthlyStatRepository(db)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to create user monthly stat repository")
@@ -63,15 +60,14 @@ func main() {
 		logrus.WithError(err).Fatal("Failed to create work session repository")
 	}
 
-	// Создаем репозиторий нерабочих дней
 	nonWorkingDayRepo, err := repository.NewGormNonWorkingDayRepository(db)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to create non-working day repository")
 	}
 
-	// Создаем сервис нерабочих дней
+	// Создаем сервисы
 	nonWorkingDayService := service.NewNonWorkingDayService(nonWorkingDayRepo)
-
+	
 	// Загружаем выходные дни из JSON
 	logrus.Info("Loading non-working days from JSON...")
 	count, err := nonWorkingDayService.LoadFromJSON("jsons/weekends_2026.json")
@@ -80,31 +76,42 @@ func main() {
 	}
 	logrus.Infof("Loaded %d non-working days for 2026", count)
 
-	// Для проверки выводим статистику
-	totalDays, err := nonWorkingDayService.CountNonWorkingDays()
+	userMonthlyStatService := service.NewUserMonthlyStatService(userMonthlyStatRepo, userRepo)
+	
+	// Создаем WorkScheduleService с зависимостью от NonWorkingDayService
+	workScheduleService := service.NewWorkScheduleService(
+		workScheduleRepo,
+		userMonthlyStatService,
+		nonWorkingDayService, // ДОБАВЛЕНО
+	)
+
+	// Автоматически создаем/обновляем графики на основе выходных дней
+	logrus.Info("Generating work schedules from non-working days...")
+	generatedSchedules, err := workScheduleService.GenerateSchedulesFromNonWorkingDays(2026, 8*60+40) // 8 часов = 480 минут
 	if err != nil {
-		logrus.Warnf("Failed to count non-working days: %v", err)
+		logrus.WithError(err).Error("Failed to generate work schedules")
 	} else {
-		logrus.Infof("Total non-working days in database: %d", totalDays)
+		logrus.Infof("Generated %d work schedules for 2026", len(generatedSchedules))
+		
+		// Проверяем созданные графики
+		totalDays := 0
+		for _, schedule := range generatedSchedules {
+			totalDays += schedule.WorkDays
+			logrus.Infof("Month %02d: %d working days, %d minutes per day", 
+				schedule.Month, schedule.WorkDays, schedule.WorkMinutesPerDay)
+		}
+		logrus.Infof("Total working days in 2026: %d", totalDays)
 	}
 
-	// Создаем сервис статистики пользователей
-	userMonthlyStatService := service.NewUserMonthlyStatService(userMonthlyStatRepo, userRepo)
-
-	// Создаем сервис пользователей с зависимостями
+	// Создаем остальные сервисы
 	userService := service.NewUserService(userRepo, workScheduleRepo, userMonthlyStatService)
-
-	// Создаем сервис графиков работы с зависимостью от сервиса статистики
-	workScheduleService := service.NewWorkScheduleService(workScheduleRepo, userMonthlyStatService)
-
-	// Создаем сервис рабочих сессий
 	workSessionService := service.NewWorkSessionService(
 		workSessionRepo,
 		userMonthlyStatRepo,
 		workScheduleRepo,
 	)
 
-	// Инициализируем администратора из конфига
+	// Инициализируем администратора
 	if err := userService.InitializeAdmin(cfg.BaseAdminChatID); err != nil {
 		logrus.Infof("Warning: Failed to initialize admin: %v", err)
 	} else if cfg.BaseAdminChatID != 0 {
@@ -119,20 +126,21 @@ func main() {
 
 	logrus.Infof("Authorized on account %s", client.Bot.Self.UserName)
 
-	// Создаем обработчик с конфигом
+	// Создаем обработчик
 	botHandler := handler.NewHandler(
 		client,
 		userService,
 		workScheduleService,
 		userMonthlyStatService,
 		workSessionService,
+		nonWorkingDayService,
 		cfg,
 	)
 
 	// Настраиваем канал обновлений
 	updates := client.Bot.GetUpdatesChan(client.UpdateConfig)
 
-	// Обработка сигналов для graceful shutdown
+	// Обработка сигналов
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 

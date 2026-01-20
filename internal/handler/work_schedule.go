@@ -422,3 +422,190 @@ func (h *Handler) handleScheduleCallback(callback *tgbotapi.CallbackQuery) {
 	callbackConfig := tgbotapi.NewCallback(callback.ID, "")
 	h.client.Bot.Send(callbackConfig)
 }
+
+func (h *Handler) generateSchedules(message *tgbotapi.Message, args string) {
+	chatID := message.Chat.ID
+
+	// Проверяем права доступа (только админы)
+	isAdmin, err := h.userService.IsAdmin(chatID)
+	if err != nil {
+		logrus.WithError(err).Error("Error checking admin status")
+		msg := tgbotapi.NewMessage(chatID, "❌ Ошибка проверки прав доступа: "+err.Error())
+		h.client.Bot.Send(msg)
+		return
+	}
+
+	if !isAdmin {
+		logrus.WithField("chat_id", chatID).Warn("Unauthorized access to generateschedules command")
+		msg := tgbotapi.NewMessage(chatID, "❌ Доступ запрещен. Эта команда только для администраторов.")
+		h.client.Bot.Send(msg)
+		return
+	}
+
+	var year int
+	var workMinutesPerDay int = 480 // 8 часов по умолчанию
+
+	if args == "" {
+		// Используем текущий год и дефолтное время
+		year = time.Now().Year()
+	} else {
+		// Парсим аргументы
+		parts := strings.Fields(args)
+		if len(parts) == 1 {
+			// Только год
+			parsedYear, err := strconv.Atoi(parts[0])
+			if err != nil {
+				msg := tgbotapi.NewMessage(chatID, "❌ Неверный формат года. Используйте: /generateschedules [год] [минуты_в_день]")
+				h.client.Bot.Send(msg)
+				return
+			}
+			year = parsedYear
+		} else if len(parts) == 2 {
+			// Год и минуты в день
+			parsedYear, err1 := strconv.Atoi(parts[0])
+			parsedMinutes, err2 := strconv.Atoi(parts[1])
+			if err1 != nil || err2 != nil {
+				msg := tgbotapi.NewMessage(chatID, "❌ Неверный формат. Используйте: /generateschedules [год] [минуты_в_день]")
+				h.client.Bot.Send(msg)
+				return
+			}
+			year = parsedYear
+			workMinutesPerDay = parsedMinutes
+		} else {
+			msg := tgbotapi.NewMessage(chatID, "❌ Неверный формат. Используйте: /generateschedules [год] [минуты_в_день]")
+			h.client.Bot.Send(msg)
+			return
+		}
+	}
+
+	// Проверяем корректность года
+	if year < 2000 || year > 2100 {
+		msg := tgbotapi.NewMessage(chatID, "❌ Неверный год. Год должен быть между 2000 и 2100.")
+		h.client.Bot.Send(msg)
+		return
+	}
+
+	// Проверяем корректность минут в день
+	if workMinutesPerDay <= 0 || workMinutesPerDay > 1440 {
+		msg := tgbotapi.NewMessage(chatID, "❌ Неверное количество минут в день. Должно быть между 1 и 1440.")
+		h.client.Bot.Send(msg)
+		return
+	}
+
+	// Генерируем графики
+	schedules, err := h.workScheduleService.GenerateSchedulesFromNonWorkingDays(year, workMinutesPerDay)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to generate schedules")
+		msg := tgbotapi.NewMessage(chatID, "❌ Ошибка генерации графиков: "+err.Error())
+		h.client.Bot.Send(msg)
+		return
+	}
+
+	// Форматируем результат
+	response := fmt.Sprintf("✅ Сгенерировано %d графиков на %d год\n\n", len(schedules), year)
+	response += "📋 Список созданных/обновленных графиков:\n\n"
+
+	for i, schedule := range schedules {
+		hours := schedule.WorkMinutesPerDay / 60
+		minutes := schedule.WorkMinutesPerDay % 60
+		monthName := time.Month(schedule.Month).String()
+		
+		response += fmt.Sprintf("%d. %s %d: %d рабочих дней × %d:%02d часов\n",
+			i+1, monthName, schedule.Year, schedule.WorkDays, hours, minutes)
+	}
+
+	msg := tgbotapi.NewMessage(chatID, response)
+	h.client.Bot.Send(msg)
+}
+
+// updateAllSchedules обновляет все существующие графики на основе выходных дней
+func (h *Handler) updateAllSchedules(message *tgbotapi.Message) {
+	chatID := message.Chat.ID
+
+	// Проверяем права доступа
+	isAdmin, err := h.userService.IsAdmin(chatID)
+	if err != nil {
+		logrus.WithError(err).Error("Error checking admin status")
+		msg := tgbotapi.NewMessage(chatID, "❌ Ошибка проверки прав доступа: "+err.Error())
+		h.client.Bot.Send(msg)
+		return
+	}
+
+	if !isAdmin {
+		logrus.WithField("chat_id", chatID).Warn("Unauthorized access to updateallschedules command")
+		msg := tgbotapi.NewMessage(chatID, "❌ Доступ запрещен. Эта команда только для администраторов.")
+		h.client.Bot.Send(msg)
+		return
+	}
+
+	// Обновляем все графики
+	updatedCount, err := h.workScheduleService.UpdateAllSchedulesFromNonWorkingDays()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to update all schedules")
+		msg := tgbotapi.NewMessage(chatID, "❌ Ошибка обновления графиков: "+err.Error())
+		h.client.Bot.Send(msg)
+		return
+	}
+
+	if updatedCount == 0 {
+		msg := tgbotapi.NewMessage(chatID, "✅ Все графики уже актуальны. Ничего не обновлено.")
+		h.client.Bot.Send(msg)
+	} else {
+		msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("✅ Обновлено %d графиков.", updatedCount))
+		h.client.Bot.Send(msg)
+	}
+}
+
+// checkWorkingDay проверяет, является ли день рабочим
+func (h *Handler) checkWorkingDay(message *tgbotapi.Message, args string) {
+	chatID := message.Chat.ID
+
+	var date time.Time
+	if args == "" {
+		// Используем сегодняшнюю дату
+		date = time.Now()
+	} else {
+		// Парсим дату из аргументов
+		parsedDate, err := time.Parse("02.01.2006", args)
+		if err != nil {
+			// Пробуем другой формат
+			parsedDate, err = time.Parse("02.01", args)
+			if err != nil {
+				msg := tgbotapi.NewMessage(chatID, "❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ или ДД.ММ")
+				h.client.Bot.Send(msg)
+				return
+			}
+			// Устанавливаем текущий год
+			parsedDate = time.Date(time.Now().Year(), parsedDate.Month(), parsedDate.Day(), 0, 0, 0, 0, time.Local)
+		}
+		date = parsedDate
+	}
+
+	// Проверяем, является ли день рабочим
+	isWorking, err := h.workScheduleService.IsWorkingDay(date)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to check if day is working")
+		msg := tgbotapi.NewMessage(chatID, "❌ Ошибка проверки дня: "+err.Error())
+		h.client.Bot.Send(msg)
+		return
+	}
+
+	// Получаем количество рабочих минут для этого дня
+	workMinutes, err := h.workScheduleService.GetWorkMinutesForDay(date)
+	if err != nil {
+		logrus.WithError(err).Warn("Failed to get work minutes for day")
+	}
+
+	response := fmt.Sprintf("📅 Дата: %s\n", date.Format("02.01.2006"))
+	
+	if isWorking {
+		hours := workMinutes / 60
+		minutes := workMinutes % 60
+		response += fmt.Sprintf("✅ Рабочий день\n⏰ Время работы: %d:%02d часов", hours, minutes)
+	} else {
+		response += "❌ Выходной день"
+	}
+
+	msg := tgbotapi.NewMessage(chatID, response)
+	h.client.Bot.Send(msg)
+}

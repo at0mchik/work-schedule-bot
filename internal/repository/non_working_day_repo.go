@@ -68,8 +68,9 @@ func (r *GormNonWorkingDayRepository) DeleteAll() error {
 
 func (r *GormNonWorkingDayRepository) IsNonWorkingDay(date time.Time) (bool, error) {
 	var count int64
+	searchDate := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.Local)
 	err := r.db.Model(&models.NonWorkingDay{}).
-		Where("date = ?", date.Format("2006-01-02")).
+		Where("date = ?", searchDate).
 		Count(&count).Error
 	return count > 0, err
 }
