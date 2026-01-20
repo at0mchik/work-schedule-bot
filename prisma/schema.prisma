@@ -80,3 +80,14 @@ model WorkSession {
   @@unique([userId, date])
   @@map("work_sessions")
 }
+
+model NonWorkingDay {
+  id        Int       @id @default(autoincrement())
+  date      DateTime  @unique  // конкретная дата
+  year      Int
+  month     Int
+  day       Int       // день месяца
+  
+  @@index([year, month])
+  @@map("non_working_days")
+}

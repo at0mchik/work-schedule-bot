@@ -9,6 +9,7 @@ import (
 	"work-schedule-bot/internal/repository"
 	"work-schedule-bot/internal/service"
 	"work-schedule-bot/pkg/telegram"
+	// "work-schedule-bot/pkg/weekends"
 
 	"github.com/sirupsen/logrus"
 	"gorm.io/driver/sqlite"
@@ -62,6 +63,31 @@ func main() {
 		logrus.WithError(err).Fatal("Failed to create work session repository")
 	}
 
+	// Создаем репозиторий нерабочих дней
+	nonWorkingDayRepo, err := repository.NewGormNonWorkingDayRepository(db)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to create non-working day repository")
+	}
+
+	// Создаем сервис нерабочих дней
+	nonWorkingDayService := service.NewNonWorkingDayService(nonWorkingDayRepo)
+
+	// Загружаем выходные дни из JSON
+	logrus.Info("Loading non-working days from JSON...")
+	count, err := nonWorkingDayService.LoadFromJSON("jsons/weekends_2026.json")
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to load non-working days")
+	}
+	logrus.Infof("Loaded %d non-working days for 2026", count)
+
+	// Для проверки выводим статистику
+	totalDays, err := nonWorkingDayService.CountNonWorkingDays()
+	if err != nil {
+		logrus.Warnf("Failed to count non-working days: %v", err)
+	} else {
+		logrus.Infof("Total non-working days in database: %d", totalDays)
+	}
+
 	// Создаем сервис статистики пользователей
 	userMonthlyStatService := service.NewUserMonthlyStatService(userMonthlyStatRepo, userRepo)
 
@@ -99,7 +125,7 @@ func main() {
 		userService,
 		workScheduleService,
 		userMonthlyStatService,
-		workSessionService, // НОВОЕ
+		workSessionService,
 		cfg,
 	)
 
