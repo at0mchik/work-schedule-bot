@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/joho/godotenv"
+	// "github.com/joho/godotenv"
 	"github.com/sirupsen/logrus"
 )
 
@@ -22,9 +22,9 @@ func GetBotConfig() *BotConfig {
 	once.Do(func() {
 		instance = &BotConfig{}
 
-		if err := godotenv.Load(); err != nil {
-			logrus.Fatalf("error loading env variables: %s", err.Error())
-		}
+		// if err := godotenv.Load(); err != nil {
+		// 	logrus.Fatalf("error loading env variables: %s", err.Error())
+		// }
 
 		instance.TelegramToken = getEnv("TELEGRAM_BOT_TOKEN", "")
 		if instance.TelegramToken == "" {
@@ -46,11 +46,11 @@ func GetBotConfig() *BotConfig {
 }
 
 func getEnv(key string, defaultVal string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
+	// if value, exists := os.LookupEnv(key); exists {
+	// 	return value
+	// }
 
-	return defaultVal
+	return os.Getenv(key)
 }
 
 func getEnvAsBool(name string, defaultVal bool) bool {

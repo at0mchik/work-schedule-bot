@@ -1,0 +1,20 @@
+services:
+  telegram-bot:
+    build: .
+    container_name: telegram-work-bot
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Moscow
+    volumes:
+      # Volume для базы данных SQLite
+      - ./prisma/work_schedule.db:/app/prisma/work_schedule.db
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "ls", "/app/bot"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  bot-database:
