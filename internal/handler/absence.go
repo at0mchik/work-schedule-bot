@@ -2,7 +2,6 @@ package handler
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -352,49 +351,6 @@ func (h *Handler) showMyAbsences(message *tgbotapi.Message, args string) {
 
 	msg := tgbotapi.NewMessage(chatID, response)
 	msg.ParseMode = "Markdown"
-	h.client.Bot.Send(msg)
-}
-
-// deleteAbsence удаляет период отсутствия
-func (h *Handler) deleteAbsence(message *tgbotapi.Message, args string) {
-	chatID := message.Chat.ID
-
-	if args == "" {
-		msg := tgbotapi.NewMessage(chatID,
-			`🗑️ *Удаление периода отсутствия*
-
-Формат команды:
-/deleteabsence ID
-
-Пример:
-/deleteabsence 1
-
-💡 *Важно:*
-• Используйте /myabsences чтобы узнать ID периодов
-• Удаление отменит все созданные рабочие сессии для этого периода`)
-		msg.ParseMode = "Markdown"
-		h.client.Bot.Send(msg)
-		return
-	}
-
-	// Парсим ID
-	id, err := strconv.ParseUint(args, 10, 32)
-	if err != nil {
-		msg := tgbotapi.NewMessage(chatID, "❌ Неверный формат ID. ID должен быть числом.")
-		h.client.Bot.Send(msg)
-		return
-	}
-
-	// Удаляем период
-	err = h.absenceService.DeleteAbsence(uint(id))
-	if err != nil {
-		logrus.WithError(err).Error("Failed to delete absence")
-		msg := tgbotapi.NewMessage(chatID, "❌ Ошибка удаления: "+err.Error())
-		h.client.Bot.Send(msg)
-		return
-	}
-
-	msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("✅ Период отсутствия с ID %d успешно удален!", id))
 	h.client.Bot.Send(msg)
 }
 

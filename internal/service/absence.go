@@ -236,21 +236,3 @@ func (s *AbsenceService) GetUserAbsences(userID uint) ([]models.AbsencePeriod, e
 func (s *AbsenceService) GetCurrentAbsence(userID uint, date time.Time) (*models.AbsencePeriod, error) {
 	return s.absenceRepo.GetCurrentAbsence(userID, date)
 }
-
-// DeleteAbsence удаляет период отсутствия
-func (s *AbsenceService) DeleteAbsence(periodID uint) error {
-	// Сначала удаляем связанные work sessions
-	_, err := s.absenceRepo.GetByID(periodID)
-	if err != nil {
-		return err
-	}
-
-	// Удаляем период
-	err = s.absenceRepo.Delete(periodID)
-	if err != nil {
-		return err
-	}
-
-	s.logger.Infof("Deleted absence period ID %d", periodID)
-	return nil
-}
