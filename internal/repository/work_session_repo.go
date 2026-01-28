@@ -79,13 +79,13 @@ func (r *GormWorkSessionRepository) Create(session *models.WorkSession) error {
 		return err
 	}
 
-	if existing != nil {
-		r.logger.WithFields(logrus.Fields{
-			"user_id": session.UserID,
-			"date":    session.Date.Format("2006-01-02"),
-		}).Warn("Work session already exists for this date")
-		return errors.New("рабочая сессия на эту дату уже существует")
-	}
+	// if existing != nil {
+	// 	r.logger.WithFields(logrus.Fields{
+	// 		"user_id": session.UserID,
+	// 		"date":    session.Date.Format("2006-01-02"),
+	// 	}).Warn("Work session already exists for this date")
+	// 	return errors.New("рабочая сессия на эту дату уже существует")
+	// }
 
 	// Вычисляем поля
 	session.UpdateCalculatedFields()
