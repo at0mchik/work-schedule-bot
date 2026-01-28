@@ -73,11 +73,11 @@ func (r *GormWorkSessionRepository) Create(session *models.WorkSession) error {
 	}
 
 	// Проверяем, есть ли уже сессия на эту дату
-	existing, err := r.GetByUserAndDate(session.UserID, session.Date)
-	if err != nil {
-		r.logger.WithError(err).Error("Failed to check existing session")
-		return err
-	}
+	// existing, err := r.GetByUserAndDate(session.UserID, session.Date)
+	// if err != nil {
+	// 	r.logger.WithError(err).Error("Failed to check existing session")
+	// 	return err
+	// }
 
 	// if existing != nil {
 	// 	r.logger.WithFields(logrus.Fields{
