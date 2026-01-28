@@ -199,10 +199,14 @@ func (h *Handler) clockIn(message *tgbotapi.Message) {
 	allowedFinishTime := targetTime.Add(time.Duration(requiredMinutes) * time.Minute)
 
 	var requiredTime string
-	if requiredMins == 0 {
-		requiredTime = fmt.Sprintf("%d часов", requiredHours)
-	} else {
-		requiredTime = fmt.Sprintf("%d часов %d минут", requiredHours, requiredMins)
+	if requiredMins < 280{
+		requiredTime = fmt.Sprintf("%d часа %d минут", 4, 40)
+	} else{
+		if requiredMins == 0 {
+			requiredTime = fmt.Sprintf("%d часов", requiredHours)
+		} else {
+			requiredTime = fmt.Sprintf("%d часов %d минут", requiredHours, requiredMins)
+		}
 	}
 
 	response := fmt.Sprintf(
