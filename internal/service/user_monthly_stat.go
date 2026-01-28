@@ -221,17 +221,17 @@ func (s *UserMonthlyStatService) FormatStat(stat *models.UserMonthlyStat) string
 
 			result += fmt.Sprintf("\n📈 Необходимо работать в день: %s", dailyTime)
 			
-			extraStr := ""
+			extraStr := "\n\n"
 			extraMin := 0
 			
 			if minutesPerDay < 520 {
-				extraStr = "➕ Переработка: "
+				extraStr += "➕ Переработка: "
 				extraMin = remainingDays * 520 - remainingMinutes
 			} else if minsPerDay > 520 {
-				extraStr = "➖ Недобор: "
+				extraStr += "➖ Недобор: "
 				extraMin = remainingMinutes - remainingDays * 520 
 			} else {
-				extraStr = "✅ План выполняется идеально"
+				extraStr += "✅ План выполняется идеально"
 				extraMin = 0
 			}
 			
