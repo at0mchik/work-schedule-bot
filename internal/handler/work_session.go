@@ -145,8 +145,8 @@ func (h *Handler) clockIn(message *tgbotapi.Message) {
 		logrus.WithError(err).Warn("Failed to check if day is non-working")
 		// Продолжаем, даже если проверка не удалась
 	} else if isNonWorking {
-		msg := tgbotapi.NewMessage(chatID, 
-			fmt.Sprintf("❌ %s - выходной день!\n\n📅 Вы не можете начать работу в выходной день согласно производственному календарю.", 
+		msg := tgbotapi.NewMessage(chatID,
+			fmt.Sprintf("❌ %s - выходной день!\n\n📅 Вы не можете начать работу в выходной день согласно производственному календарю.",
 				targetTime.Format("02.01.2006")))
 		h.client.Bot.Send(msg)
 		return
@@ -196,6 +196,7 @@ func (h *Handler) clockIn(message *tgbotapi.Message) {
 	inTime := targetTime.Format("15:04")
 	requiredHours := requiredMinutes / 60
 	requiredMins := requiredMinutes % 60
+	allowedFinishTime := targetTime.Add(time.Duration(requiredMinutes) * time.Minute)
 
 	var requiredTime string
 	if requiredMins == 0 {
@@ -206,19 +207,21 @@ func (h *Handler) clockIn(message *tgbotapi.Message) {
 
 	response := fmt.Sprintf(
 		`✅ Рабочий день начат!
-		
+
 ⏰ Время начала: %s
 📅 Дата: %s
 ⏳ Норма на день: %s
+⏰ Можно уходить в: %s
 
 💡 Не забудьте отметить конец рабочего дня командой /out`,
 		inTime,
 		targetTime.Format("02.01.2006"),
 		requiredTime,
+		allowedFinishTime.Format("15:04"),
 	)
 
 	// Если указано время в прошлом, добавляем предупреждение
-	if targetTime.Before(time.Now().Add(-5 * time.Minute)) {
+	if targetTime.Before(time.Now().Add(-24 * time.Hour)) {
 		response += "\n\n⚠️ *Внимание:* Работа начата задним числом."
 	}
 
@@ -244,10 +247,10 @@ func (h *Handler) clockOut(message *tgbotapi.Message) {
 
 	// Проверяем, есть ли специальный флаг для пропуска проверки выходного дня
 	skipHolidayCheck := strings.Contains(message.Text, "confirm_holiday")
-	
+
 	// Убираем флаг из текста для парсинга
 	textForParsing := strings.ReplaceAll(message.Text, "confirm_holiday", "")
-	
+
 	// Парсим аргументы команды
 	dateStr, timeStr := parseCommandArgs(textForParsing)
 
@@ -283,11 +286,11 @@ func (h *Handler) clockOut(message *tgbotapi.Message) {
 			logrus.WithError(err).Warn("Failed to check if day is non-working")
 		} else if isNonWorking {
 			// Показываем предупреждение и просим подтверждение
-			warningMsg := tgbotapi.NewMessage(chatID, 
-				fmt.Sprintf("⚠️ *Внимание:* %s - выходной день!\n\nВы действительно хотите завершить работу в выходной день?\n\nЭто может быть ошибкой.", 
+			warningMsg := tgbotapi.NewMessage(chatID,
+				fmt.Sprintf("⚠️ *Внимание:* %s - выходной день!\n\nВы действительно хотите завершить работу в выходной день?\n\nЭто может быть ошибкой.",
 					targetTime.Format("02.01.2006")))
 			warningMsg.ParseMode = "Markdown"
-			
+
 			// Создаем inline клавиатуру для подтверждения
 			inlineKeyboard := tgbotapi.NewInlineKeyboardMarkup(
 				tgbotapi.NewInlineKeyboardRow(
@@ -301,7 +304,7 @@ func (h *Handler) clockOut(message *tgbotapi.Message) {
 					),
 				),
 			)
-			
+
 			warningMsg.ReplyMarkup = inlineKeyboard
 			h.client.Bot.Send(warningMsg)
 			return
@@ -406,7 +409,7 @@ func (h *Handler) clockOut(message *tgbotapi.Message) {
 
 	response := fmt.Sprintf(
 		`✅ Рабочий день завершен!
-		
+
 ⏰ Время работы: %s - %s
 ⏳ Отработано: %s
 📊 Норма: %s%s
@@ -590,7 +593,7 @@ func (h *Handler) getMonthWorkSessions(message *tgbotapi.Message, args string) {
 		if session.Status == models.StatusCompleted {
 			dataStr := session.Date.Format("02-01-2006")
 			_, ok := dataMap[dataStr]
-			if !ok{
+			if !ok {
 				dataMap[dataStr] = "here"
 				completedDays++
 			}

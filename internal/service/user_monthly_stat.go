@@ -208,7 +208,6 @@ func (s *UserMonthlyStatService) FormatStat(stat *models.UserMonthlyStat) string
 		// Расчет необходимого времени работы в день (ДОБАВЛЕНО)
 		if remainingDays > 0 {
 			minutesPerDay := remainingMinutes / remainingDays
-			extraMinutes := remainingMinutes % remainingDays
 			
 			hoursPerDay := minutesPerDay / 60
 			minsPerDay := minutesPerDay % 60
@@ -220,11 +219,33 @@ func (s *UserMonthlyStatService) FormatStat(stat *models.UserMonthlyStat) string
 				dailyTime = fmt.Sprintf("%dч %dм", hoursPerDay, minsPerDay)
 			}
 
-			if extraMinutes > 0 {
-				dailyTime += fmt.Sprintf(" + %dм", extraMinutes)
-			}
-
 			result += fmt.Sprintf("\n📈 Необходимо работать в день: %s", dailyTime)
+			
+			extraStr := ""
+			extraMin := 0
+			
+			if minutesPerDay < 520 {
+				extraStr = "➕ Переработка: "
+				extraMin = remainingDays * 520 - remainingMinutes
+			} else if minsPerDay > 520 {
+				extraStr = "➖ Недобор: "
+				extraMin = remainingMinutes - remainingDays * 520 
+			} else {
+				extraStr = "✅ План выполняется идеально"
+				extraMin = 0
+			}
+			
+			extraHours := extraMin / 60
+			extraMinutes := extraMin % 60
+			
+			var extraTime string
+			if extraMinutes == 0 {
+				extraTime = fmt.Sprintf("%dч", extraHours)
+			} else {
+				extraTime = fmt.Sprintf("%dч %dм", extraHours, extraMinutes)
+			}
+			
+			result += fmt.Sprintf("%s%s", extraStr, extraTime)
 		}
 	}
 
