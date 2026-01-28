@@ -393,7 +393,6 @@ func (s *WorkSessionService) CanClockIn(userID uint, targetTime time.Time) (bool
 	}
 
 	todaySession, err := s.sessionRepo.GetByUserAndDate(userID, targetTime)
-	logrus.Info("=========================================\n=========================================\n=========================================\n\n\n", todaySession)
 	if err != nil {
 		return false, "", err
 	}
@@ -404,9 +403,9 @@ func (s *WorkSessionService) CanClockIn(userID uint, targetTime time.Time) (bool
 			return false, "сегодня у вас " + strings.ToLower(todaySession.FormatSessionType()), nil
 		}
 
-		if todaySession.IsCompleted() {
-			return false, "вы уже завершили работу сегодня", nil
-		}
+		// if todaySession.IsCompleted() {
+		// 	return false, "вы уже завершили работу сегодня", nil
+		// }
 	}
 
 	// Проверяем, не находится ли пользователь в отпуске/больничном
