@@ -201,6 +201,7 @@ func (h *Handler) clockIn(message *tgbotapi.Message) {
 	var requiredTime string
 	if requiredMinutes < 280{
 		requiredTime = fmt.Sprintf("%d часа %d минут", 4, 40)
+		allowedFinishTime = targetTime.Add(time.Duration(280) * time.Minute)
 	} else{
 		if requiredMins == 0 {
 			requiredTime = fmt.Sprintf("%d часов", requiredHours)
