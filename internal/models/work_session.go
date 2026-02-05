@@ -146,9 +146,6 @@ func (ws *WorkSession) IsValid() bool {
 	if ws.ClockInTime.IsZero() {
 		return false
 	}
-	if ws.RequiredMinutes <= 0 {
-		return false
-	}
 	if ws.Status != StatusActive && ws.Status != StatusCompleted && ws.Status != StatusAbsent {
 		return false
 	}
