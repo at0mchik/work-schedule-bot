@@ -34,7 +34,6 @@ Thumbs.db
 # Logs
 *.log
 
-.db
 node_modules
 package.json
 package-lock.json
