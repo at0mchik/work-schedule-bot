@@ -227,7 +227,7 @@ func (s *UserMonthlyStatService) FormatStat(stat *models.UserMonthlyStat) string
 			if minutesPerDay < 520 {
 				extraStr += "➕ Переработка: "
 				extraMin = remainingDays * 520 - remainingMinutes
-			} else if minsPerDay > 520 {
+			} else if minutesPerDay > 520 {
 				extraStr += "➖ Недобор: "
 				extraMin = remainingMinutes - remainingDays * 520 
 			} else {
