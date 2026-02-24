@@ -595,7 +595,7 @@ func (h *Handler) getMonthWorkSessions(message *tgbotapi.Message, args string) {
 	var totalMinutes, completedDays int
 	dataMap := make(map[string]any)
 	for _, session := range sessions {
-		if session.Status == models.StatusCompleted {
+		if session.Status == models.StatusCompleted || session.Status == models.StatusAbsent {
 			dataStr := session.Date.Format("02-01-2006")
 			_, ok := dataMap[dataStr]
 			if !ok {
