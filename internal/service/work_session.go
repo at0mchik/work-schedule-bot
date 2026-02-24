@@ -298,9 +298,9 @@ func (s *WorkSessionService) FormatSession(session *models.WorkSession) string {
 	}
 
 	diffStatus := ""
-	if tempDiffMinutes > 0 {
+	if tempDiffMinutes < 0 {
 		diffStatus = fmt.Sprintf("➕ Переработка: %s", diffTime)
-	} else if tempDiffMinutes < 0 {
+	} else if tempDiffMinutes > 0 {
 		diffStatus = fmt.Sprintf("➖ Недобор: %s", diffTime)
 	}
 
