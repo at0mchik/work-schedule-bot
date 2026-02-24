@@ -248,6 +248,7 @@ func (s *WorkSessionService) FormatSession(session *models.WorkSession) string {
 	workedMinutes := session.WorkedMinutes % 60
 	diffHours := session.DiffMinutes / 60
 	diffMinutes := session.DiffMinutes % 60
+	tempDiffMinutes := 0
 	if session.WorkedMinutes == 0{
 		currentTime := time.Now()
 		diff := currentTime.Sub(session.ClockInTime)
@@ -255,7 +256,7 @@ func (s *WorkSessionService) FormatSession(session *models.WorkSession) string {
 		workedHours = tempMinutes / 60
 		workedMinutes = tempMinutes % 60
 		
-		tempDiffMinutes := session.RequiredMinutes - tempMinutes
+		tempDiffMinutes = session.RequiredMinutes - tempMinutes
 		diffHours = tempDiffMinutes / 60
 		diffMinutes = tempDiffMinutes % 60
 	} 
@@ -297,9 +298,9 @@ func (s *WorkSessionService) FormatSession(session *models.WorkSession) string {
 	}
 
 	diffStatus := ""
-	if session.DiffMinutes > 0 {
+	if tempDiffMinutes > 0 {
 		diffStatus = fmt.Sprintf("➕ Переработка: %s", diffTime)
-	} else if session.DiffMinutes < 0 {
+	} else if tempDiffMinutes < 0 {
 		diffStatus = fmt.Sprintf("➖ Недобор: %s", diffTime)
 	}
 
